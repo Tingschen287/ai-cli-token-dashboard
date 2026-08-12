@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token看板</title>
+<!-- 图标就是热力图本身：Claude 橙底 + 深浅白格。内联 SVG，不引外部资源；
+     16px 下格子仍分得清，比通用图表 emoji 更认得出是这个看板 -->
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3.6' fill='%23d97757'/><g fill='%23fff'><rect x='2.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.30'/><rect x='5.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.95'/><rect x='8.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.55'/><rect x='11.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.25'/><rect x='2.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='.50'/><rect x='5.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='.75'/><rect x='8.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='1'/><rect x='11.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='.40'/><rect x='2.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.25'/><rect x='5.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.45'/><rect x='8.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.70'/><rect x='11.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.90'/></g></svg>">
+<style>
+:root {
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --border: #e6e6ea;
+  --text: #1d1d1f;
+  --muted: #86868b;
+  --faint: #f5f5f7;
+  --empty: #f0f0f3;
+  --accent: #0071e3;
+  --shadow: 0 1px 3px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.04);
+  --radius: 13px;
+  --pad: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #131316;
+    --panel: #1c1c1f;
+    --border: #2e2e33;
+    --text: #f5f5f7;
+    --muted: #8e8e93;
+    --faint: #232327;
+    --empty: #26262b;
+    --accent: #2b8fff;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text",
+        "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;              /* 一屏到底，不留滚动条 */
+}
+
+/* ---------- 骨架：整屏三段（顶栏 / 主区 / 无） ---------- */
+.app {
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column;
+  gap: 12px; padding: 14px 18px 16px;
+}
+.stage {
+  flex: 1; min-height: 0;        /* min-height:0 是 flex 子项能收缩的前提 */
+  display: grid;
+  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
+  gap: 14px;
+}
+.side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+/* 侧栏两块面板平分剩余高度：高度必须由布局决定，否则「几行放得下」
+   会依赖内容本身，形成先有鸡还是先有蛋 */
+.side > .panel { flex: 1; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px var(--pad);
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar { display: flex; align-items: center; gap: 16px; flex: none; }
+h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white-space: nowrap; }
+.topbar .total { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.topbar .total b { color: var(--text); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+.topbar .spacer { flex: 1; }
+.sync { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sync b { color: var(--text); font-weight: 500; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font: inherit; font-size: 12px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.btn:hover:not(:disabled) { background: var(--faint); border-color: var(--muted); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.icon { padding: 6px 9px; }
+.btn.spin svg { animation: spin .8s linear infinite; }
+.btn.ok { color: #12833a; border-color: #12833a55; }
+.btn.warn { color: #b25000; border-color: #b2500055; }
+@media (prefers-color-scheme: dark) {
+  .btn.ok { color: #4ad07a; } .btn.warn { color: #ffa250; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn.spin svg { animation: none; } }
+.btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- 分段控件 ---------- */
+.seg { display: inline-flex; background: var(--faint); border-radius: 8px; padding: 2px; }
+.seg button {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 12px; padding: 4px 11px; border-radius: 6px;
+  transition: color .15s, background .15s;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--panel); color: var(--text); font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+}
+
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; flex: none; margin-bottom: 10px;
+}
+.panel-head h2 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+.panel-head .note { color: var(--muted); font-size: 11px; }
+
+/* ---------- 左：日历 ---------- */
+.cal-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 共享月份轴：三行日历时间轴相同，画一次，格子才严格对齐可纵向比对 */
+.months {
+  display: grid; grid-auto-flow: column; gap: var(--gap, 3px);
+  font-size: 10.5px; color: var(--muted); height: 15px; line-height: 15px;
+  flex: none; margin-bottom: 4px;
+}
+.months span { white-space: nowrap; overflow: visible; }
+
+.cal-stack { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cal-row { display: flex; flex-direction: column; flex: 1; min-height: 0; justify-content: flex-start; }
+.cal-title {
+  display: flex; align-items: baseline; gap: 7px; font-size: 12px;
+  font-weight: 500; height: 18px; flex: none;
+}
+.cal-title .range { color: var(--muted); font-weight: 400; font-size: 11px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+.cal {
+  display: grid; grid-auto-flow: column;
+  grid-template-rows: repeat(7, var(--cell));
+  grid-auto-columns: var(--cell);       /* 锁死列宽，否则多余宽度会摊进列间距 */
+  justify-content: start;
+  gap: var(--gap);
+  flex: none;
+}
+.cal i {
+  width: var(--cell); height: var(--cell);
+  border-radius: max(2px, calc(var(--cell) / 4)); background: var(--empty);
+  display: block; cursor: default;
+}
+.cal i[data-v]:hover, .cal i.col-hot { outline: 1.5px solid var(--text); outline-offset: 1px; }
+
+.legend { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10.5px; flex: none; margin-top: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+.legend .sep { flex: 1; }
+
+.chart { display: block; flex: 1; min-height: 0; }
+.chart .grid-line { stroke: var(--border); stroke-width: 1; }
+.chart .axis-label { fill: var(--muted); font-size: 10px; }
+
+/* ---------- 右：卡片 ---------- */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: none; }
+.card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 11px; padding: 10px 12px; min-width: 0;
+}
+.card .k { color: var(--muted); font-size: 11px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.card .k span.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .v { font-size: 19px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.card .m { color: var(--muted); font-size: 10.5px; margin-top: 2px; font-variant-numeric: tabular-nums;
+           overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 右：排行表 ---------- */
+/* 放不下就滚动，不再按高度裁行数——裁掉的长尾用户根本看不到 */
+.rank { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px;
+        overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+.rank::-webkit-scrollbar { width: 6px; }
+.rank::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.rank::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.rank { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+.rank-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; flex: none; }
+.rank-name { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-val { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 堆叠条：整条长度 = 相对榜首的占比，段长 = 该来源在这一项里的占比。
+   8px 是能看清分段边界的下限，再粗列表就笨重了 */
+.stack { grid-column: 1 / -1; display: flex; height: 8px; border-radius: 4px; overflow: hidden; min-width: 4px; }
+/* 占比极小的段（实测有 0.1px 的）既看不见也悬停不到，给个最低可见宽度；
+   flex-shrink 会把这点宽度从其他段按比例匀出来，总长仍然准确 */
+.stack span { display: block; height: 100%; cursor: default; min-width: 3px; }
+.stack span:hover { filter: brightness(1.25); }
+.empty { color: var(--muted); font-size: 11.5px; padding: 4px 0; }
+
+/* ---------- 浮层 ---------- */
+#tip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+  background: rgba(28,28,30,.95); color: #fff; font-size: 12px; line-height: 1.55;
+  padding: 7px 10px; border-radius: 7px; z-index: 50; white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,.2);
+}
+#tip b { font-weight: 600; }
+#tip .sm { color: rgba(255,255,255,.65); }
+
+#info {
+  position: fixed; right: 18px; top: 52px; z-index: 60; width: min(520px, calc(100vw - 36px));
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 40px rgba(0,0,0,.18); padding: 14px 16px;
+  font-size: 12px; line-height: 1.65; color: var(--muted);
+}
+#info[hidden] { display: none; }
+#info b { color: var(--text); }
+#info div + div { margin-top: 6px; }
+code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: var(--text); }
+
+@media (max-width: 940px) {
+  .stage { grid-template-columns: 1fr; }
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100vh; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <h1>Token 活动</h1>
+    <span class="total" id="total"></span>
+    <span class="spacer"></span>
+    <span class="sync" id="sync"></span>
+    <button class="btn" id="refresh">
+      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+        <path d="M13.6 8a5.6 5.6 0 1 1-1.7-4" fill="none" stroke="currentColor"
+              stroke-width="1.7" stroke-linecap="round"/>
+        <path d="M13.4 1.2v3.1h-3.1" fill="none" stroke="currentColor"
+              stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span id="refresh-text">刷新</span>
+    </button>
+    <button class="btn icon" id="info-btn" aria-label="口径说明" title="口径说明">ⓘ</button>
+  </header>
+
+  <div class="stage">
+    <section class="panel">
+      <div class="panel-head">
+        <div class="seg" id="view-seg">
+          <button data-view="daily" aria-pressed="true">每日</button>
+          <button data-view="weekly" aria-pressed="false">每周</button>
+          <button data-view="cumulative" aria-pressed="false">累计</button>
+        </div>
+        <span class="note" id="scale-note"></span>
+        <div class="seg" id="range-seg">
+          <button data-weeks="13" aria-pressed="false">3 个月</button>
+          <button data-weeks="26" aria-pressed="false">6 个月</button>
+          <button data-weeks="53" aria-pressed="true">1 年</button>
+        </div>
+      </div>
+      <div class="cal-wrap" id="view"></div>
+    </section>
+
+    <aside class="side">
+      <div class="cards" id="cards"></div>
+      <section class="panel">
+        <div class="panel-head"><h2>按模型</h2><span class="note" id="models-scope"></span></div>
+        <div class="rank" id="models"></div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>按项目</h2><span class="note" id="projects-scope"></span></div>
+        <div class="rank" id="projects"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div id="tip"></div>
+<div id="info" hidden></div>
+
+<script>
+let DATA = /*__DATA__*/null;
+
+// cco 用 Claude 品牌橙；ccs 虽然也是 Claude Code，但跑第三方模型，用紫区分；
+// grok 让出橙色改中性灰
+const COLORS = { cco: '#d97757', ccs: '#7d4bd8', grok: '#6b7280' };
+const DAY = 86400000;
+const GAP = 3;
+
+/* ---------- 工具 ---------- */
+const fmt = n => n.toLocaleString('en-US');
+/* token 一律用 K/M/B：模型计价本来就是按 per-million 报的，M 和成本直觉同刻度，
+   比数逗号快得多。全站共用一套单位，避免同页出现两种写法。 */
+function human(n) {
+  for (const [div, suffix] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
+    if (n >= div) {
+      const v = n / div;
+      return (v >= 10 ? v.toFixed(1) : v.toFixed(2)) + suffix;
+    }
+  }
+  return String(Math.round(n));
+}
+const iso = d => {
+  const t = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return t.toISOString().slice(0, 10);
+};
+const parse = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+function weekKey(dateStr) {
+  const d = parse(dateStr);
+  d.setDate(d.getDate() - d.getDay());
+  return iso(d);
+}
+
+/* 分位数分档：token 分布跨几个数量级，线性着色会让绝大多数格子挤在最浅一档 */
+function thresholds(values) {
+  const v = values.filter(x => x > 0).sort((a, b) => a - b);
+  if (!v.length) return [0, 0, 0, 0];
+  const q = p => v[Math.min(v.length - 1, Math.floor(v.length * p))];
+  return [q(0.25), q(0.5), q(0.75), q(0.92)];
+}
+function level(value, th) {
+  if (value <= 0) return 0;
+  let lv = 1;
+  for (const t of th) if (value > t) lv++;
+  return Math.min(lv, 5);
+}
+/* 单色顺序色阶：同一色相下按明度递进，色盲安全，明暗主题都可读 */
+function shade(hex, lv) {
+  if (lv === 0) return null;
+  const alpha = [0, 0.18, 0.36, 0.58, 0.8, 1][lv];
+  const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/* ---------- 数据整形 ---------- */
+// 刷新会整体换掉 DATA，所以派生结构必须能重算，不能是顶层 const
+let PROFILES = [], byProfile = {}, firstDate = null, lastDate = null;
+
+function applyData(payload) {
+  DATA = payload;
+  // 目录不存在或没有任何记录的来源直接不画，避免出现一整行空白日历
+  PROFILES = DATA.profiles.filter(p => p.present && p.msgs > 0);
+  byProfile = {};
+  for (const p of PROFILES) byProfile[p.key] = {};
+  for (const row of DATA.daily) {
+    if (byProfile[row.profile]) byProfile[row.profile][row.date] = row;
+  }
+  const allDates = DATA.daily.map(r => r.date).sort();
+  firstDate = allDates[0];
+  lastDate = allDates[allDates.length - 1];
+}
+
+let state = { view: 'daily', weeks: 53 };
+
+/* ---------- 顶栏与卡片 ---------- */
+function renderMeta() {
+  const totalIncr = PROFILES.reduce((s, p) => s + p.incr, 0);
+  const totalRead = PROFILES.reduce((s, p) => s + p.cache_read, 0);
+  document.getElementById('total').innerHTML =
+    `增量 <b>${human(totalIncr)}</b> · 缓存读 ${human(totalRead)} · ${firstDate} → ${lastDate}`;
+
+  const cards = PROFILES.map(p => {
+    const extra = [];
+    if (p.reasoning) extra.push(`推理 ${human(p.reasoning)}`);
+    // ticks 单位按 1e-9 USD 推定；grok 是订阅登录，这只是名义价值
+    if (p.cost_ticks) extra.push(`名义 ≈$${(p.cost_ticks / 1e9).toFixed(0)}`);
+    // 窄屏会把这行截断成省略号，挂 title 保证信息不丢
+    const sub = `缓存读 ${human(p.cache_read)} · ${fmt(p.msgs)} 次调用${extra.length ? ' · ' + extra.join(' · ') : ''}`;
+    return `
+      <div class="card">
+        <div class="k"><span class="dot" style="background:${COLORS[p.key]}"></span><span class="name">${p.label}</span></div>
+        <div class="v" title="${fmt(p.incr)} tokens">${human(p.incr)}</div>
+        <div class="m" title="${sub}">${sub}</div>
+      </div>`;
+  }).join('');
+
+  const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);
+  document.getElementById('cards').innerHTML = cards + `
+    <div class="card">
+      <div class="k"><span class="name">合计</span></div>
+      <div class="v">${human(totalIncr)}</div>
+      <div class="m">已去重 ${fmt(totalDup)} 条 · 扫描 ${DATA.scan ? DATA.scan.seconds : '?'}s</div>
+    </div>`;
+}
+
+/* ---------- 左：日历 ----------
+   格子尺寸同时受宽高约束：横向要铺满列数，纵向三行日历必须塞进可用高度。
+   取两者较小值，一屏才既填满又不溢出。 */
+function cellSize(cols, rows) {
+  const box = document.getElementById('view');
+  const byWidth = (box.clientWidth - (cols - 1) * GAP) / cols;
+  // 每行日历的开销：标题 18 + 图例/间距，末行还要留共享图例的位置
+  const perRow = (box.clientHeight - 15 - 4 - 22) / rows - 18;
+  const byHeight = (perRow - 6 * GAP) / 7;
+  return Math.max(5, Math.floor(Math.min(byWidth, byHeight)));
+}
+
+function renderCalendar() {
+  const weekly = state.view === 'weekly';
+  const end = parse(lastDate);
+  const start = new Date(end.getTime() - (state.weeks * 7 - 1) * DAY);
+  start.setDate(start.getDate() - start.getDay()); // 对齐到周日
+
+  // 先数列数，才能反推格子尺寸
+  let cols = 0;
+  for (let t = start.getTime(); t <= end.getTime(); t += DAY) {
+    if (new Date(t).getDay() === 0) cols++;
+  }
+  const cell = cellSize(cols, PROFILES.length);
+
+  // 共享月份轴：三行时间轴完全相同，只画一次
+  const monthCols = [];
+  let lastMonth = -1;
+  for (let t = start.getTime(); t <= end.getTime(); t += DAY) {
+    const d = new Date(t);
+    if (d.getDay() !== 0) continue;
+    const m = d.getMonth();
+    monthCols.push(m !== lastMonth ? (lastMonth = m, `${m + 1}月`) : '');
+  }
+
+  const rows = PROFILES.map(p => {
+    const map = byProfile[p.key];
+
+    // 每周模式：把日聚合成周，整列共用同一个值
+    let bucket = map, keyOf = k => k;
+    if (weekly) {
+      bucket = {};
+      for (const [date, row] of Object.entries(map)) {
+        const wk = weekKey(date);
+        const b = bucket[wk] || (bucket[wk] = { incr: 0, cache_read: 0, msgs: 0 });
+        b.incr += row.incr;
+        b.cache_read += row.cache_read;
+        b.msgs += row.msgs;
+      }
+      keyOf = weekKey;
+    }
+    const th = thresholds(Object.values(bucket).map(r => r.incr));
+
+    const cells = [];
+    let colIndex = -1;
+    for (let t = start.getTime(); t <= end.getTime(); t += DAY) {
+      const d = new Date(t), key = iso(d);
+      if (d.getDay() === 0) colIndex++;
+      const row = bucket[keyOf(key)];
+      const lv = row ? level(row.incr, th) : 0;
+      const bg = shade(COLORS[p.key], lv);
+      const label = weekly ? `${keyOf(key)} 起那周` : key;
+      const attrs = row
+        ? ` data-v="1" data-col="${colIndex}" data-d="${label}" data-i="${row.incr}"`
+          + ` data-c="${row.cache_read}" data-m="${row.msgs}" data-p="${p.label}"`
+        : ` data-col="${colIndex}" data-d="${label}" data-p="${p.label}"`;
+      cells.push(`<i style="${bg ? 'background:' + bg : ''}"${attrs}></i>`);
+    }
+
+    const unit = weekly ? Object.keys(bucket).length + ' 周'
+                        : Object.values(map).filter(r => r.incr > 0).length + ' 天';
+    return `
+      <div class="cal-row">
+        <div class="cal-title">
+          <span class="dot" style="background:${COLORS[p.key]}"></span>
+          ${p.label}
+          <span class="range">${unit}有活动 · ${human(p.incr)}</span>
+        </div>
+        <div class="cal${weekly ? ' by-week' : ''}">${cells.join('')}</div>
+      </div>`;
+  }).join('');
+
+  // 图例也只留一份：三行用各自色相，但分档规则相同
+  const legend = PROFILES.map(p =>
+    `<span class="dot" style="background:${COLORS[p.key]}"></span>`).join('')
+    + ' 少 ' + [1, 2, 3, 4, 5].map(l =>
+      `<i style="background:${shade('#6b7280', l)}"></i>`).join('') + ' 多';
+
+  document.getElementById('view').innerHTML = `
+    <div class="months" style="grid-template-columns:repeat(${monthCols.length},${cell}px);--gap:${GAP}px">
+      ${monthCols.map(m => `<span>${m}</span>`).join('')}
+    </div>
+    <div class="cal-stack" style="--cell:${cell}px;--gap:${GAP}px">${rows}</div>
+    <div class="legend">${legend}<span class="sep"></span>
+      <span>${weekly ? '按周合计分档' : '按分位数分档'}</span></div>`;
+
+  document.getElementById('scale-note').textContent =
+    weekly ? '同一列为一周' : '颜色深浅 = 当日增量';
+}
+
+/* ---------- 左：累计折线 ---------- */
+function buildSeries() {
+  const end = parse(lastDate);
+  const start = new Date(end.getTime() - (state.weeks * 7 - 1) * DAY);
+  const keys = [];
+  const cursor = new Date(start);
+  cursor.setDate(cursor.getDate() - cursor.getDay());
+  while (cursor <= end) { keys.push(iso(cursor)); cursor.setDate(cursor.getDate() + 7); }
+
+  const series = {};
+  for (const p of PROFILES) {
+    const weekly = Object.fromEntries(keys.map(k => [k, 0]));
+    for (const [date, row] of Object.entries(byProfile[p.key])) {
+      const k = weekKey(date);
+      if (k in weekly) weekly[k] += row.incr;
+    }
+    series[p.key] = keys.map(k => weekly[k]);
+  }
+  return { keys, series };
+}
+
+function renderChart() {
+  const box = document.getElementById('view');
+  const { keys, series } = buildSeries();
+  // 用容器实际像素作画布，避免 viewBox 缩放把坐标轴文字拉变形
+  const W = box.clientWidth, H = Math.max(120, box.clientHeight - 6);
+  const PAD = { t: 10, r: 10, b: 22, l: 56 };
+  const iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b;
+
+  const data = {};
+  for (const p of PROFILES) {
+    let acc = 0;
+    data[p.key] = series[p.key].map(v => (acc += v));
+  }
+  const max = Math.max(1, ...PROFILES.flatMap(p => data[p.key]));
+  const y = v => PAD.t + ih - (v / max) * ih;
+  const n = keys.length;
+
+  let out = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = (max / 4) * i, yy = y(v);
+    out += `<line class="grid-line" x1="${PAD.l}" y1="${yy}" x2="${W - PAD.r}" y2="${yy}"/>`;
+    out += `<text class="axis-label" x="${PAD.l - 8}" y="${yy + 4}" text-anchor="end">${human(v)}</text>`;
+  }
+  PROFILES.forEach(p => {
+    const pts = data[p.key].map((v, i) =>
+      `${(PAD.l + (n === 1 ? 0 : i * iw / (n - 1))).toFixed(1)},${y(v).toFixed(1)}`);
+    out += `<polyline fill="none" stroke="${COLORS[p.key]}" stroke-width="2" stroke-linejoin="round"`
+         + ` stroke-linecap="round" points="${pts.join(' ')}"/>`;
+    const last = data[p.key][n - 1];
+    out += `<circle cx="${(PAD.l + iw).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3" fill="${COLORS[p.key]}">`
+         + `<title>${p.label} 累计 ${fmt(last)}</title></circle>`;
+  });
+  let lastM = -1;
+  keys.forEach((k, i) => {
+    const m = parse(k).getMonth();
+    if (m === lastM) return;
+    lastM = m;
+    const x = PAD.l + (n === 1 ? 0 : i * iw / (n - 1));
+    out += `<text class="axis-label" x="${x.toFixed(1)}" y="${H - 7}" text-anchor="middle">${m + 1}月</text>`;
+  });
+
+  const legend = PROFILES.map(p =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;margin-right:14px">
+       <span class="dot" style="background:${COLORS[p.key]}"></span>${p.label}</span>`).join('');
+
+  box.innerHTML = `<svg class="chart" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${out}</svg>
+                   <div class="legend">${legend}</div>`;
+  document.getElementById('scale-note').textContent = '增量 token 累计';
+}
+
+/* ---------- 右：排行 ----------
+   时间窗口跟随左侧视图：每日 = 最后一天，每周 = 最后一周，累计 = 整个范围。 */
+function activeWindow() {
+  if (state.view === 'daily') {
+    return { test: d => d === lastDate, label: lastDate };
+  }
+  if (state.view === 'weekly') {
+    const wk = weekKey(lastDate);
+    return { test: d => weekKey(d) === wk, label: `${wk} 起那周` };
+  }
+  const start = new Date(parse(lastDate).getTime() - (state.weeks * 7 - 1) * DAY);
+  start.setDate(start.getDate() - start.getDay());
+  const from = iso(start);
+  const label = state.weeks >= 53 ? '近 1 年' : `近 ${Math.round(state.weeks / 4.345)} 个月`;
+  return { test: d => d >= from && d <= lastDate, label };
+}
+
+function renderRank(id, rows, nameKey) {
+  const box = document.getElementById(id);
+  const win = activeWindow();
+  document.getElementById(id + '-scope').textContent = win.label;
+
+  // 按名字分组，组内再按来源拆开——同一个项目常常横跨多个渠道，
+  // 分开列成多行就看不出这个项目总共烧了多少
+  const groups = new Map();
+  for (const r of rows) {
+    if (r.incr <= 0 || !win.test(r.date)) continue;
+    let g = groups.get(r[nameKey]);
+    if (!g) groups.set(r[nameKey], g = { name: r[nameKey], total: 0, parts: {} });
+    g.total += r.incr;
+    g.parts[r.profile] = (g.parts[r.profile] || 0) + r.incr;
+  }
+  const list = [...groups.values()].sort((a, b) => b.total - a.total);
+
+  if (!list.length) {
+    box.innerHTML = `<div class="empty">这个时间窗口内没有记录</div>`;
+    return;
+  }
+  const max = list[0].total;
+  const label = Object.fromEntries(PROFILES.map(p => [p.key, p.label]));
+
+  box.innerHTML = list.map(g => {
+    const segs = PROFILES.filter(p => g.parts[p.key]).map(p => {
+      const v = g.parts[p.key];
+      const pct = v / g.total * 100;
+      return `<span style="width:${pct.toFixed(2)}%;background:${COLORS[p.key]}"`
+           + ` data-seg="${label[p.key]}" data-sv="${v}" data-sp="${pct.toFixed(0)}"`
+           + ` data-sn="${g.name}"></span>`;
+    }).join('');
+    return `
+      <div class="rank-row">
+        <div class="rank-name" title="${g.name}">${g.name}</div>
+        <div class="rank-val">${human(g.total)}</div>
+        <div class="stack" style="width:${(g.total / max * 100).toFixed(1)}%">${segs}</div>
+      </div>`;
+  }).join('');
+}
+
+/* ---------- tooltip ---------- */
+const tip = document.getElementById('tip');
+function clearColumn() {
+  document.querySelectorAll('.cal i.col-hot').forEach(x => x.classList.remove('col-hot'));
+}
+function placeTip(anchor) {
+  const r = anchor.getBoundingClientRect();
+  tip.style.opacity = 1;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  tip.style.left = Math.max(8, Math.min(window.innerWidth - tw - 8, r.left + r.width / 2 - tw / 2)) + 'px';
+  // 贴近顶部时翻到下方，免得被裁掉
+  tip.style.top = (r.top - th - 8 < 4 ? r.bottom + 8 : r.top - th - 8) + 'px';
+}
+
+document.addEventListener('mouseover', e => {
+  // 堆叠条的某一段：显示这个项目里该来源的具体用量
+  const seg = e.target.closest('.stack span');
+  if (seg) {
+    tip.innerHTML = `<b>${seg.dataset.sn}</b><br>${seg.dataset.seg} `
+      + `<b>${human(+seg.dataset.sv)}</b><span class="sm"> · 占 ${seg.dataset.sp}%</span>`;
+    placeTip(seg);
+    return;
+  }
+  const cell = e.target.closest('.cal i');
+  if (!cell) return;
+  const unit = state.view === 'weekly' ? '次调用（整周）' : '次调用';
+  // token 用 K/M/B，调用次数保持整数——次数本来就是个位数量级的计数
+  tip.innerHTML = cell.dataset.v
+    ? `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br>增量 <b>${human(+cell.dataset.i)}</b>`
+      + `<br><span class="sm">缓存读 ${human(+cell.dataset.c)} · ${fmt(+cell.dataset.m)} ${unit}</span>`
+    : `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br><span class="sm">无活动</span>`;
+
+  // 每周模式下整列同属一周，一起高亮才看得出 hover 的是哪一周
+  clearColumn();
+  if (state.view === 'weekly') {
+    cell.closest('.cal').querySelectorAll(`i[data-col="${cell.dataset.col}"]`)
+        .forEach(x => x.classList.add('col-hot'));
+  }
+
+  placeTip(cell);
+});
+document.addEventListener('mouseout', e => {
+  if (!e.target.closest('.cal i') && !e.target.closest('.stack span')) return;
+  tip.style.opacity = 0;
+  clearColumn();
+});
+
+/* ---------- 渲染 ---------- */
+function render() {
+  // 每日和每周共用同一套格子，只有累计走折线（累计值单调递增，
+  // 画成热力图会整片最深色，没有信息量）
+  if (state.view === 'cumulative') renderChart();
+  else renderCalendar();
+}
+
+function renderRanks() {
+  renderRank('models', DATA.models, 'model');
+  renderRank('projects', DATA.projects, 'project');
+}
+
+function renderAll() {
+  renderMeta();
+  render();
+  renderRanks();
+}
+
+function bindSeg(id, key, cast) {
+  document.getElementById(id).addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    state[key] = cast(btn.dataset[key === 'weeks' ? 'weeks' : 'view']);
+    [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
+    render();
+    renderRanks();   // 时间窗口变了，右侧排行要跟着重算
+  });
+}
+
+bindSeg('view-seg', 'view', String);
+bindSeg('range-seg', 'weeks', Number);
+applyData(DATA);
+renderAll();
+
+/* ---------- 口径说明 ---------- */
+const info = document.getElementById('info');
+info.innerHTML = `
+  <div><b>口径</b>：增量 token = 非缓存输入 + 输出 + 缓存写入。cache_read 单列不参与着色——它占总量九成以上，混入会让图形只反映会话长度。</div>
+  <div><b>跨工具对齐</b>：Grok 的 <code>inputTokens</code> 含缓存读、Claude 的 <code>input_tokens</code> 不含，采集时已减掉。</div>
+  <div><b>去重</b>：Claude 按 <code>message.id</code>（流式重复多），Grok 按 <code>session+prompt_id+模型</code>（天然无重复）。</div>
+  <div><b>时区</b>：Claude 的 UTC 串与 Grok 的 unix 秒都已转本机时区。</div>
+  <div><b>费用</b>：只有 Grok 记 <code>costUsdTicks</code>，按 1e-9 USD 推定且是订阅下的名义值，不等于实际扣费。</div>
+  <div><b>刷新</b>：每 60 秒自动同步，只读本地会话记录，不消耗 token。</div>`;
+const infoBtn = document.getElementById('info-btn');
+infoBtn.addEventListener('click', () => { info.hidden = !info.hidden; });
+document.addEventListener('click', e => {
+  if (!info.hidden && !info.contains(e.target) && e.target !== infoBtn) info.hidden = true;
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') info.hidden = true; });
+
+/* ---------- 每分钟自动同步 ----------
+   服务端后台线程按自己的节奏重扫，这里只是把结果取回来。数据没变化时
+   不重绘，免得整点把正在 hover 的格子刷掉。 */
+let lastSync = Date.now();
+const signature = p => JSON.stringify([
+  p.profiles.map(x => [x.key, x.incr, x.msgs]), p.daily.length
+]);
+let lastSig = signature(DATA);
+
+async function autoSync() {
+  try {
+    const res = await fetch('/api/data', { cache: 'no-store' });
+    if (!res.ok) return;                 // 静态模式下静默跳过，不打扰
+    const payload = await res.json();
+    lastSync = Date.now();
+    const sig = signature(payload);
+    if (sig === lastSig) return;         // 无变化就不动 DOM
+    lastSig = sig;
+    applyData(payload);
+    renderAll();
+  } catch (err) { /* 离线打开时必然失败，忽略 */ }
+}
+
+function tickSync() {
+  const sec = Math.round((Date.now() - lastSync) / 1000);
+  document.getElementById('sync').innerHTML =
+    sec < 90 ? `数据 <b>${sec}</b> 秒前` : `数据 <b>${Math.round(sec / 60)}</b> 分钟前`;
+}
+setInterval(autoSync, 60000);
+setInterval(tickSync, 1000);
+tickSync();
+
+/* ---------- 刷新 ----------
+   有本地服务时 /api/data 会重新扫描目录并返回新聚合结果；
+   直接双击 file:// 打开时 fetch 必然失败，降级成给出命令。 */
+const REFRESH_CMD = 'python3 collect.py --serve';
+const btn = document.getElementById('refresh');
+const btnText = document.getElementById('refresh-text');
+let busy = false, resetTimer = null;
+
+function flash(cls, text, ms) {
+  btn.classList.add(cls);
+  btnText.textContent = text;
+  clearTimeout(resetTimer);
+  resetTimer = setTimeout(() => {
+    btn.classList.remove('ok', 'warn');
+    btnText.textContent = '刷新';
+  }, ms);
+}
+
+async function doRefresh() {
+  if (busy) return;
+  busy = true;
+  btn.disabled = true;
+  btn.classList.add('spin');
+  btn.classList.remove('ok', 'warn');
+  btnText.textContent = '扫描中';
+  try {
+    // force=1 让服务端立刻重扫，不等下一个定时周期
+    const res = await fetch('/api/data?force=1', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    applyData(await res.json());
+    renderAll();
+    lastSync = Date.now();
+    flash('ok', '已更新', 2000);
+  } catch (err) {
+    info.hidden = false;
+    flash('warn', '需服务', 3600);
+  } finally {
+    busy = false;
+    btn.disabled = false;
+    btn.classList.remove('spin');
+  }
+}
+
+btn.addEventListener('click', doRefresh);
+// r 键刷新，但别抢输入框的按键
+document.addEventListener('keydown', e => {
+  if (e.key === 'r' && !e.metaKey && !e.ctrlKey && !e.altKey
+      && !/^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName)) doRefresh();
+});
+
+// 窗口尺寸变了要重算格子与行数，否则不再刚好一屏
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(renderAll, 150);
+});
+</script>
+</body>
+</html>

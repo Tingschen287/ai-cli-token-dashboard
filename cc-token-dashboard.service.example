@@ -1,0 +1,31 @@
+# AI CLI Token 看板 —— systemd 用户服务
+#
+# 用法：
+#   mkdir -p ~/.config/systemd/user
+#   cp cc-token-dashboard.service.example ~/.config/systemd/user/cc-token-dashboard.service
+#   # 把下面两处 %h/path/to/ai-cli-token-dashboard 改成本机实际路径
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now cc-token-dashboard
+#
+# 想让它在没有登录会话时也随系统启动（WSL 场景需要）：
+#   sudo loginctl enable-linger $USER
+#
+# %h 是 systemd 的占位符，展开为当前用户家目录。
+
+[Unit]
+Description=AI CLI Token 消耗看板
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/path/to/ai-cli-token-dashboard
+ExecStart=/usr/bin/python3 %h/path/to/ai-cli-token-dashboard/collect.py --serve 8899 --interval 60 --host 127.0.0.1
+Restart=always
+RestartSec=5
+# 只读本地会话记录，不需要任何特权
+NoNewPrivileges=true
+# 后台常驻，别跟前台程序抢 CPU
+Nice=10
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,10 @@
+# 生成物：内嵌你的真实项目名与用量数据，绝不要提交
+dashboard.html
+*.json
+!package.json
+
+__pycache__/
+*.py[cod]
+
+.DS_Store
+.venv/
