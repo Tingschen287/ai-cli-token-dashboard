@@ -156,6 +156,7 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .cal i[data-v]:hover, .cal i.col-hot { outline: 1.5px solid var(--text); outline-offset: 1px; }
 
 .legend { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10.5px; flex: none; margin-top: 6px; }
+.cal-row .legend { margin-top: 4px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: block; }
 .legend .lramp { display: inline-flex; gap: 2px; }
 .legend .sep { flex: 1; }
@@ -405,7 +406,7 @@ function fmtReset(iso, style) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function quotaRow(key, prov, w, showReset, stale) {
+function quotaRow(key, prov, w, showReset, stale, color) {
   const pct = Math.max(0, Math.min(100, w.pct || 0));
   const iso = w.reset || (w.reset_ms ? new Date(w.reset_ms).toISOString() : '');
   const reset = fmtReset(iso, w.key === '5h' ? 'time' : 'date');
@@ -413,11 +414,15 @@ function quotaRow(key, prov, w, showReset, stale) {
   return `<div class="qrow" title="${tip}">
     ${prov ? `<span class="qp">${prov}</span>` : ''}
     <span class="qw">${w.key === '5h' ? '5h' : '周'}</span>
-    <span class="qbar"><i style="width:${pct}%;background:${COLORS[key]}"></i></span>
+    <span class="qbar"><i style="width:${pct}%;background:${color || COLORS[key]}"></i></span>
     <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
     ${showReset && reset ? `<span class="qr">↻${reset}</span>` : ''}
   </div>`;
 }
+
+/* MiniMax 品牌色：官方 logo 是品红→橙渐变，取品红端 #E3177E 作为代表色，
+   与 cco 橙、ccs 紫都能拉开 */
+const MMX_COLOR = '#E3177E';
 
 function quotaZone(key) {
   const Q = DATA.quota;
@@ -432,12 +437,14 @@ function quotaZone(key) {
   } else if (key === 'ccs' && Q.ccs) {
     // Kimi / MiniMax 各自独立两行；四行都内联时间会太宽，收进 tooltip
     for (const prov of Q.ccs.providers) {
-      const short = prov.name.replace(/\s*For Coding\s*/i, '');
+      const isMmx = /^minimax$/i.test(prov.name);
+      const short = isMmx ? 'Minimax' : prov.name.replace(/\s*For Coding\s*/i, '');
+      const color = isMmx ? MMX_COLOR : null;
       if (prov.error && !prov.windows.length) {
         rows += `<div class="qrow" title="${prov.error}"><span class="qp">${short}</span><span>查询失败</span></div>`;
         continue;
       }
-      rows += prov.windows.map(w => quotaRow(key, short, w, false, prov.stale)).join('');
+      rows += prov.windows.map(w => quotaRow(key, short, w, false, prov.stale, color)).join('');
     }
   }
   // grok/ccs 无数据时不画
@@ -491,8 +498,8 @@ function renderMeta() {
 function cellSize(cols, rows) {
   const box = document.getElementById('view');
   const byWidth = (box.clientWidth - (cols - 1) * GAP) / cols;
-  // 每行日历的开销：标题 18 + 图例/间距，末行还要留共享图例的位置
-  const perRow = (box.clientHeight - 15 - 4 - 22) / rows - 18;
+  // 每行日历的开销：标题 18 + 行内图例 14；底部再留一行共享分档注释 16
+  const perRow = (box.clientHeight - 15 - 4 - 16) / rows - 18 - 14;
   const byHeight = (perRow - 6 * GAP) / 7;
   return Math.max(5, Math.floor(Math.min(byWidth, byHeight)));
 }
@@ -556,6 +563,9 @@ function renderCalendar() {
 
     const unit = weekly ? Object.keys(bucket).length + ' 周'
                         : Object.values(map).filter(r => r.incr > 0).length + ' 天';
+    // 图例跟在各自行下面：色阶用本行色相，看图时不用跨行对照
+    const ramp = [1, 2, 3, 4, 5].map(l =>
+      `<i style="background:${shade(COLORS[p.key], l)}"></i>`).join('');
     return `
       <div class="cal-row">
         <div class="cal-title">
@@ -564,22 +574,18 @@ function renderCalendar() {
           <span class="range">${unit}有活动 · ${human(p.incr)}</span>
         </div>
         <div class="cal${weekly ? ' by-week' : ''}">${cells.join('')}</div>
+        <div class="legend">少 <span class="lramp">${ramp}</span> 多</div>
       </div>`;
   }).join('');
 
-  // 图例也只留一份：分档规则相同，但每行色相不同——色阶必须逐平台各给一条，
-  // 单画一条灰色阶对橙色/紫色行不成立
-  const legend = '少 ' + PROFILES.map(p =>
-    `<span class="lramp" title="${p.label}">` + [1, 2, 3, 4, 5].map(l =>
-      `<i style="background:${shade(COLORS[p.key], l)}"></i>`).join('')
-    + '</span>').join('') + ' 多';
+  // 底部只留分档规则说明，色阶已经各归各行
 
   document.getElementById('view').innerHTML = `
     <div class="months" style="grid-template-columns:repeat(${monthCols.length},${cell}px);--gap:${GAP}px">
       ${monthCols.map(m => `<span>${m}</span>`).join('')}
     </div>
     <div class="cal-stack" style="--cell:${cell}px;--gap:${GAP}px">${rows}</div>
-    <div class="legend">${legend}<span class="sep"></span>
+    <div class="legend"><span class="sep"></span>
       <span>${weekly ? '按周合计分档' : '按分位数分档'}</span></div>`;
 
   document.getElementById('scale-note').textContent =
