@@ -352,34 +352,65 @@ function applyData(payload) {
 
 let state = { view: 'daily', weeks: 53 };
 
-/* ---------- 顶栏与卡片 ---------- */
+/* ---------- 顶栏与卡片 ----------
+   卡片和右侧排行共用 activeWindow()：切到「每日」时排行只剩今天，
+   卡片若还停在全期总量，同一屏上两个数字就对不上。 */
+function windowTotals() {
+  const win = activeWindow();
+  const acc = {};
+  for (const p of PROFILES) {
+    acc[p.key] = { incr: 0, cache_read: 0, msgs: 0, reasoning: 0, cost_ticks: 0 };
+  }
+  for (const r of DATA.daily) {
+    const a = acc[r.profile];
+    if (!a || !win.test(r.date)) continue;
+    a.incr += r.incr;
+    a.cache_read += r.cache_read;
+    a.msgs += r.msgs;
+    a.reasoning += r.reasoning || 0;
+    a.cost_ticks += r.cost_ticks || 0;
+  }
+  return { win, acc };
+}
+
 function renderMeta() {
-  const totalIncr = PROFILES.reduce((s, p) => s + p.incr, 0);
-  const totalRead = PROFILES.reduce((s, p) => s + p.cache_read, 0);
+  const { win, acc } = windowTotals();
+
+  // 顶栏固定给全期总账，作为不随 tab 变动的锚点
+  const lifeIncr = PROFILES.reduce((s, p) => s + p.incr, 0);
+  const lifeRead = PROFILES.reduce((s, p) => s + p.cache_read, 0);
   document.getElementById('total').innerHTML =
-    `增量 <b>${human(totalIncr)}</b> · 缓存读 ${human(totalRead)} · ${firstDate} → ${lastDate}`;
+    `全期增量 <b>${human(lifeIncr)}</b> · 缓存读 ${human(lifeRead)} · ${firstDate} → ${lastDate}`;
 
   const cards = PROFILES.map(p => {
+    const d = acc[p.key];
     const extra = [];
-    if (p.reasoning) extra.push(`推理 ${human(p.reasoning)}`);
+    if (d.reasoning) extra.push(`推理 ${human(d.reasoning)}`);
     // ticks 单位按 1e-9 USD 推定；grok 是订阅登录，这只是名义价值
-    if (p.cost_ticks) extra.push(`名义 ≈$${(p.cost_ticks / 1e9).toFixed(0)}`);
+    if (d.cost_ticks) {
+      const usd = d.cost_ticks / 1e9;
+      // 单日窗口下金额常常不足 $1，取整会全变成 $0
+      extra.push(`名义 ≈$${usd.toFixed(usd >= 10 ? 0 : 2)}`);
+    }
     // 窄屏会把这行截断成省略号，挂 title 保证信息不丢
-    const sub = `缓存读 ${human(p.cache_read)} · ${fmt(p.msgs)} 次调用${extra.length ? ' · ' + extra.join(' · ') : ''}`;
+    const sub = `缓存读 ${human(d.cache_read)} · ${fmt(d.msgs)} 次调用${extra.length ? ' · ' + extra.join(' · ') : ''}`;
     return `
       <div class="card">
         <div class="k"><span class="dot" style="background:${COLORS[p.key]}"></span><span class="name">${p.label}</span></div>
-        <div class="v" title="${fmt(p.incr)} tokens">${human(p.incr)}</div>
+        <div class="v" title="${fmt(d.incr)} tokens">${human(d.incr)}</div>
         <div class="m" title="${sub}">${sub}</div>
       </div>`;
   }).join('');
 
+  const totalIncr = PROFILES.reduce((s, p) => s + acc[p.key].incr, 0);
   const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);
+  // 去重条数和扫描耗时属于全期扫描信息，与窗口无关，收进 title
+  const scanInfo = `全期已去重 ${fmt(totalDup)} 条 · 扫描 ${DATA.scan ? DATA.scan.seconds : '?'}s`;
   document.getElementById('cards').innerHTML = cards + `
     <div class="card">
       <div class="k"><span class="name">合计</span></div>
-      <div class="v">${human(totalIncr)}</div>
-      <div class="m">已去重 ${fmt(totalDup)} 条 · 扫描 ${DATA.scan ? DATA.scan.seconds : '?'}s</div>
+      <div class="v" title="${fmt(totalIncr)} tokens">${human(totalIncr)}</div>
+      <div class="m" title="${scanInfo}">${win.label}</div>
     </div>`;
 }
 
@@ -685,7 +716,9 @@ function bindSeg(id, key, cast) {
     state[key] = cast(btn.dataset[key === 'weeks' ? 'weeks' : 'view']);
     [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
     render();
-    renderRanks();   // 时间窗口变了，右侧排行要跟着重算
+    // 时间窗口变了，右侧卡片和排行都要跟着重算
+    renderMeta();
+    renderRanks();
   });
 }
 
