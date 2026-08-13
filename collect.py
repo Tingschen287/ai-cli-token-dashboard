@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """扫描本机各 AI 编码 CLI 的会话记录，聚合 token 消耗并生成看板。
 
-只读本地文件，不联网、不调任何 API——刷新多少次都不消耗 token。
+静态生成只读本地文件、不联网、不调任何 API——刷新多少次都不消耗 token。
+服务模式（--serve）额外开一个额度轮询线程，查询各平台套餐额度并合并进
+/api/data（见 QuotaPoller 一节）；这是唯一的联网行为，失败自动沿用旧数据。
 
 支持两种记录格式：
   claude  <config_dir>/projects/<项目>/<会话>.jsonl
@@ -23,6 +25,7 @@ import sys
 import threading
 import time
 import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -289,6 +292,197 @@ def render(payload, template, target):
     target.write_text(html.replace(marker, blob), encoding="utf-8")
 
 
+# ── 额度轮询（仅 --serve 模式联网）────────────────────────────────────
+# 各平台套餐额度是账号实时状态，与会话记录无关、与时间窗口无关，单独慢轮询。
+# grok 没有公开额度接口（本地记录也无额度字段），本期不参与。
+QUOTA_INTERVAL = 180   # 3 分钟；额度变化慢，频繁查询无意义还容易被限流
+CCS_DB = Path.home() / ".cc-switch" / "cc-switch.db"
+CCO_CREDENTIALS = Path.home() / ".claude-official" / ".credentials.json"
+
+
+def _http_get_json(url, headers, timeout=8):
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def quota_cco():
+    """Claude 官方 OAuth usage：5 小时窗 + 每周窗的已用百分比。"""
+    try:
+        creds = json.loads(CCO_CREDENTIALS.read_text(encoding="utf-8"))
+        token = (creds.get("claudeAiOauth") or {}).get("accessToken") or ""
+    except Exception:
+        return None
+    if not token:
+        return None
+    d = _http_get_json("https://api.anthropic.com/api/oauth/usage", {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+        "anthropic-beta": "oauth-2025-04-20",
+        "User-Agent": "claude-code/2.1.150",
+    })
+    windows = []
+    five = d.get("five_hour") or {}
+    if five.get("utilization") is not None:
+        windows.append({"key": "5h", "pct": round(five.get("utilization") or 0),
+                        "reset": five.get("resets_at") or ""})
+    seven = d.get("seven_day") or {}
+    if seven.get("utilization") is not None:
+        windows.append({"key": "week", "pct": round(seven.get("utilization") or 0),
+                        "reset": seven.get("resets_at") or ""})
+    return {"windows": windows} if windows else None
+
+
+def _ccs_quota_providers():
+    """cc-switch 库里有额度接口的 claude 供应商（Kimi/MiniMax）。
+
+    不管当前启用的是谁，两家都独立查询、独立展示（用户明确要求不合并）；
+    腾云智算这类没有额度接口的供应商不出现在列表里。
+    """
+    if not CCS_DB.is_file():
+        return []
+    import sqlite3
+    try:
+        db = sqlite3.connect(f"file:{CCS_DB}?mode=ro", uri=True)
+        rows = db.execute(
+            "SELECT name, settings_config FROM providers WHERE app_type='claude'"
+        ).fetchall()
+        db.close()
+    except Exception:
+        return []
+    out = []
+    for name, cfg in rows:
+        try:
+            env = (json.loads(cfg).get("env") or {})
+        except Exception:
+            continue
+        base = env.get("ANTHROPIC_BASE_URL") or ""
+        token = env.get("ANTHROPIC_AUTH_TOKEN") or ""
+        low = base.lower()
+        if "kimi.com/coding" in low and token:
+            out.append({"name": name, "kind": "kimi", "base": base, "token": token})
+        elif "minimax" in low and token:
+            out.append({"name": name, "kind": "minimax", "base": base, "token": token})
+    return out
+
+
+def _quota_kimi(base, token):
+    d = _http_get_json(base.rstrip("/") + "/v1/usages", {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "claude-cli/2.1.150",
+    })
+    windows = []
+    # limits[] 里是滚动短窗（300 分钟），usage 是周配额
+    for w in d.get("limits") or []:
+        det = w.get("detail") or {}
+        lim, used = int(det.get("limit") or 0), int(det.get("used") or 0)
+        if lim:
+            windows.append({"key": "5h", "pct": used * 100 // lim,
+                            "reset": det.get("resetTime") or ""})
+            break
+    u = d.get("usage") or {}
+    lim, used = int(u.get("limit") or 0), int(u.get("used") or 0)
+    if lim:
+        windows.append({"key": "week", "pct": used * 100 // lim,
+                        "reset": u.get("resetTime") or ""})
+    return windows
+
+
+def _quota_minimax(token):
+    # 接口只给剩余百分比（部分套餐给原始计数），统一换算成已用百分比
+    d = _http_get_json("https://www.minimaxi.com/v1/token_plan/remains", {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "User-Agent": "claude-cli/2.1.150",
+    })
+    models = d.get("model_remains") or []
+    m = next((x for x in models if x.get("model_name") == "general"),
+             models[0] if models else None)
+    if not m:
+        return []
+
+    def used_pct(rem_key, tot_key, used_key):
+        rem = m.get(rem_key)
+        if rem is not None:
+            return max(0, 100 - int(rem))
+        tot, used = m.get(tot_key) or 0, m.get(used_key) or 0
+        return round(used * 100 / tot) if tot else None
+
+    windows = []
+    p5 = used_pct("current_interval_remaining_percent",
+                  "current_interval_total_count", "current_interval_usage_count")
+    if p5 is not None:
+        windows.append({"key": "5h", "pct": p5, "reset_ms": m.get("end_time") or 0})
+    pw = used_pct("current_weekly_remaining_percent",
+                  "current_weekly_total_count", "current_weekly_usage_count")
+    if pw is not None:
+        windows.append({"key": "week", "pct": pw,
+                        "reset_ms": m.get("weekly_end_time") or 0})
+    return windows
+
+
+def quota_ccs():
+    """Kimi 和 MiniMax 并行语义（顺序调用但都独立容错），单家失败不拖垮整组。"""
+    out = []
+    for p in _ccs_quota_providers():
+        try:
+            windows = (_quota_kimi(p["base"], p["token"]) if p["kind"] == "kimi"
+                       else _quota_minimax(p["token"]))
+            out.append({"name": p["name"], "windows": windows, "error": None})
+        except Exception as exc:
+            out.append({"name": p["name"], "windows": [], "error": str(exc)[:80]})
+    return {"providers": out} if out else None
+
+
+class QuotaPoller:
+    """慢轮询各家额度，单家失败沿用该家的旧数据，页面永远有东西显示。"""
+
+    def __init__(self, interval=QUOTA_INTERVAL):
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.latest = {}
+
+    def get(self):
+        with self.lock:
+            return self.latest
+
+    def poll_once(self):
+        fresh = {}
+        for key, fn in (("cco", quota_cco), ("ccs", quota_ccs)):
+            try:
+                fresh[key] = fn()
+            except Exception:
+                fresh[key] = None
+        with self.lock:
+            old = self.latest
+            merged = {"grok": None}
+            merged["cco"] = fresh["cco"] or old.get("cco")
+            if fresh["ccs"] is None:
+                merged["ccs"] = old.get("ccs")
+            else:
+                # 按供应商粒度合并：哪家这轮挂了，用哪家的旧数据顶上并标记 stale
+                old_provs = {p["name"]: p
+                             for p in (old.get("ccs") or {}).get("providers", [])}
+                provs = []
+                for p in fresh["ccs"]["providers"]:
+                    if p["error"] and not p["windows"] and p["name"] in old_provs:
+                        provs.append({**old_provs[p["name"]], "stale": True})
+                    else:
+                        provs.append(p)
+                merged["ccs"] = {"providers": provs}
+            merged["updated"] = datetime.now().astimezone().isoformat(timespec="seconds")
+            self.latest = merged
+
+    def loop(self):
+        while True:
+            try:
+                self.poll_once()
+            except Exception as exc:
+                print(f"[warn] 额度轮询失败: {exc}", file=sys.stderr)
+            time.sleep(self.interval)
+
+
 class Snapshot:
     """后台线程定时扫描的结果。页面请求直接读这里，不各自触发扫描。"""
 
@@ -328,6 +522,12 @@ def serve(port, interval, host="127.0.0.1"):
     template = HERE / "template.html"
     snapshot = Snapshot(interval)
     threading.Thread(target=snapshot.loop, daemon=True).start()
+    quota = QuotaPoller()
+    threading.Thread(target=quota.loop, daemon=True).start()
+
+    def with_quota(payload):
+        # 浅拷贝后挂额度，不污染 Snapshot 里的共享对象
+        return {**payload, "quota": quota.get()}
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, body, content_type):
@@ -343,11 +543,11 @@ def serve(port, interval, host="127.0.0.1"):
             if path == "/api/data":
                 # force=1 是刷新按钮：不等定时器，立刻重扫
                 payload = snapshot.refresh() if "force=1" in query else snapshot.get()
-                self._send(json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                self._send(json.dumps(with_quota(payload), ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             elif path in ("/", "/index.html", "/dashboard.html"):
                 html = template.read_text(encoding="utf-8")
-                blob = json.dumps(snapshot.get(), ensure_ascii=False).replace("</", "<\\/")
+                blob = json.dumps(with_quota(snapshot.get()), ensure_ascii=False).replace("</", "<\\/")
                 self._send(html.replace("/*__DATA__*/null", blob).encode("utf-8"),
                            "text/html; charset=utf-8")
             elif path == "/healthz":

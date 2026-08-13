@@ -175,6 +175,18 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .card .m { color: var(--muted); font-size: 10.5px; margin-top: 2px; font-variant-numeric: tabular-nums;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* 卡片额度区：账号套餐的实时状态，与时间窗口无关，自成一块 */
+.card .quota { margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--border);
+               display: flex; flex-direction: column; gap: 4px; }
+.qrow { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted);
+        font-variant-numeric: tabular-nums; }
+.qrow .qp { flex: none; width: 50px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qrow .qw { flex: none; width: 14px; }
+.qrow .qbar { flex: 1; height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; min-width: 0; }
+.qrow .qbar i { display: block; height: 100%; border-radius: 3px; }
+.qrow .qn { flex: none; min-width: 30px; text-align: right; font-weight: 600; }
+.qrow .qr { flex: none; }
+
 /* ---------- 右：排行表 ---------- */
 /* 放不下就滚动，不再按高度裁行数——裁掉的长尾用户根本看不到 */
 .rank { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px;
@@ -373,6 +385,61 @@ function windowTotals() {
   return { win, acc };
 }
 
+/* ---------- 卡片额度区 ----------
+   额度是账号实时状态，不随 activeWindow() 变——这是它有别于卡片大数字的根本点。
+   数据来自后端 QuotaPoller（DATA.quota），静态生成的 HTML 没有这个键，直接不画。 */
+function pctColor(pct) {
+  return pct >= 90 ? '#e5484d' : pct >= 70 ? '#d4a000' : pct >= 50 ? '#e8930c' : '#2c9e4f';
+}
+
+function fmtReset(iso, style) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  if (style === 'time') {
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0'), ap = h >= 12 ? 'pm' : 'am';
+    return `${h % 12 || 12}:${m}${ap}`;
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function quotaRow(key, prov, w, showReset, stale) {
+  const pct = Math.max(0, Math.min(100, w.pct || 0));
+  const iso = w.reset || (w.reset_ms ? new Date(w.reset_ms).toISOString() : '');
+  const reset = fmtReset(iso, w.key === '5h' ? 'time' : 'date');
+  const tip = (reset ? `↻ ${reset} 重置` : '暂无重置时间') + (stale ? ' · 查询失败，显示上次数据' : '');
+  return `<div class="qrow" title="${tip}">
+    ${prov ? `<span class="qp">${prov}</span>` : ''}
+    <span class="qw">${w.key === '5h' ? '5h' : '周'}</span>
+    <span class="qbar"><i style="width:${pct}%;background:${COLORS[key]}"></i></span>
+    <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
+    ${showReset && reset ? `<span class="qr">↻${reset}</span>` : ''}
+  </div>`;
+}
+
+function quotaZone(key) {
+  const Q = DATA.quota;
+  if (!Q) return '';
+  let rows = '';
+  if (key === 'cco' && Q.cco) {
+    // 官方只有两行，宽度够，重置时间内联
+    rows = Q.cco.windows.map(w => quotaRow(key, '', w, true, false)).join('');
+  } else if (key === 'ccs' && Q.ccs) {
+    // Kimi / MiniMax 各自独立两行；四行都内联时间会太宽，收进 tooltip
+    for (const prov of Q.ccs.providers) {
+      const short = prov.name.replace(/\s*For Coding\s*/i, '');
+      if (prov.error && !prov.windows.length) {
+        rows += `<div class="qrow" title="${prov.error}"><span class="qp">${short}</span><span>查询失败</span></div>`;
+        continue;
+      }
+      rows += prov.windows.map(w => quotaRow(key, short, w, false, prov.stale)).join('');
+    }
+  }
+  // grok 没有公开额度接口，不画
+  return rows ? `<div class="quota">${rows}</div>` : '';
+}
+
 function renderMeta() {
   const { win, acc } = windowTotals();
 
@@ -398,7 +465,7 @@ function renderMeta() {
       <div class="card">
         <div class="k"><span class="dot" style="background:${COLORS[p.key]}"></span><span class="name">${p.label}</span></div>
         <div class="v" title="${fmt(d.incr)} tokens">${human(d.incr)}</div>
-        <div class="m" title="${sub}">${sub}</div>
+        <div class="m" title="${sub}">${sub}</div>${quotaZone(p.key)}
       </div>`;
   }).join('');
 
@@ -735,6 +802,7 @@ info.innerHTML = `
   <div><b>去重</b>：Claude 按 <code>message.id</code>（流式重复多），Grok 按 <code>session+prompt_id+模型</code>（天然无重复）。</div>
   <div><b>时区</b>：Claude 的 UTC 串与 Grok 的 unix 秒都已转本机时区。</div>
   <div><b>费用</b>：只有 Grok 记 <code>costUsdTicks</code>，按 1e-9 USD 推定且是订阅下的名义值，不等于实际扣费。</div>
+  <div><b>卡片额度区</b>：账号套餐的 5 小时窗与每周窗已用量，每 3 分钟轮询一次，与时间窗口无关。Kimi / MiniMax 各自独立查询；Grok 没有公开额度接口，故无额度区。查询失败时显示上一次成功的数据。</div>
   <div><b>刷新</b>：每 60 秒自动同步，只读本地会话记录，不消耗 token。</div>`;
 const infoBtn = document.getElementById('info-btn');
 infoBtn.addEventListener('click', () => { info.hidden = !info.hidden; });
