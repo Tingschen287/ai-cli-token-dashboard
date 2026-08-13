@@ -157,6 +157,7 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 
 .legend { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 10.5px; flex: none; margin-top: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+.legend .lramp { display: inline-flex; gap: 2px; }
 .legend .sep { flex: 1; }
 
 .chart { display: block; flex: 1; min-height: 0; }
@@ -566,11 +567,12 @@ function renderCalendar() {
       </div>`;
   }).join('');
 
-  // 图例也只留一份：三行用各自色相，但分档规则相同
-  const legend = PROFILES.map(p =>
-    `<span class="dot" style="background:${COLORS[p.key]}"></span>`).join('')
-    + ' 少 ' + [1, 2, 3, 4, 5].map(l =>
-      `<i style="background:${shade('#6b7280', l)}"></i>`).join('') + ' 多';
+  // 图例也只留一份：分档规则相同，但每行色相不同——色阶必须逐平台各给一条，
+  // 单画一条灰色阶对橙色/紫色行不成立
+  const legend = '少 ' + PROFILES.map(p =>
+    `<span class="lramp" title="${p.label}">` + [1, 2, 3, 4, 5].map(l =>
+      `<i style="background:${shade(COLORS[p.key], l)}"></i>`).join('')
+    + '</span>').join('') + ' 多';
 
   document.getElementById('view').innerHTML = `
     <div class="months" style="grid-template-columns:repeat(${monthCols.length},${cell}px);--gap:${GAP}px">
