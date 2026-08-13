@@ -26,7 +26,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 # 要扫描的配置目录。key 是看板标识，dir 支持 ~ 展开，format 决定用哪个解析器。
@@ -294,7 +294,7 @@ def render(payload, template, target):
 
 # ── 额度轮询（仅 --serve 模式联网）────────────────────────────────────
 # 各平台套餐额度是账号实时状态，与会话记录无关、与时间窗口无关，单独慢轮询。
-# grok 没有公开额度接口（本地记录也无额度字段），本期不参与。
+# grok 走未公开的 CLI billing 接口（与 /usage 同源），只有周额度一个窗口。
 QUOTA_INTERVAL = 180   # 3 分钟；额度变化慢，频繁查询无意义还容易被限流
 CCS_DB = Path.home() / ".cc-switch" / "cc-switch.db"
 CCO_CREDENTIALS = Path.home() / ".claude-official" / ".credentials.json"
@@ -435,6 +435,99 @@ def quota_ccs():
     return {"providers": out} if out else None
 
 
+GROK_AUTH = Path.home() / ".grok" / "auth.json"
+GROK_BILLING_URL = "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
+
+
+def _grok_entry():
+    """读 grok CLI 的 OIDC 登录态（auth.json 是单键字典，值里才有各字段）"""
+    try:
+        auth = json.loads(GROK_AUTH.read_text(encoding="utf-8"))
+        key = next(iter(auth))
+        entry = auth[key]
+        if isinstance(entry, dict) and entry.get("auth_mode") == "oidc":
+            return auth, key, entry
+    except Exception:
+        pass
+    return None, None, None
+
+
+def _grok_access_token():
+    """优先复用未过期的 access token，过期才 refresh。
+
+    refresh_token 会轮换且 grok CLI 自己也在读写 auth.json，所以只有不得不
+    refresh 时才写回，写回前重新读文件合并，尽量不把 CLI 的登录态顶掉。
+    """
+    auth, key, entry = _grok_entry()
+    if not entry:
+        return None
+    token = entry.get("key") or ""
+    exp = entry.get("expires_at")
+    if token and exp:
+        try:
+            exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) < exp_dt - timedelta(minutes=5):
+                return token
+        except ValueError:
+            pass
+    refresh_token = entry.get("refresh_token") or ""
+    if not refresh_token:
+        return None
+    disc = _http_get_json(
+        f"{entry['oidc_issuer']}/.well-known/openid-configuration",
+        {"Accept": "application/json"}, timeout=15)
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": entry["oidc_client_id"],
+    }).encode()
+    req = urllib.request.Request(
+        disc["token_endpoint"], data=body, method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded",
+                 "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        tok = json.loads(resp.read().decode("utf-8"))
+    # 重新读再合并：refresh 期间 CLI 可能自己也写过 auth.json
+    try:
+        fresh = json.loads(GROK_AUTH.read_text(encoding="utf-8"))
+        merged = fresh.get(key) if isinstance(fresh.get(key), dict) else entry
+        merged["key"] = tok["access_token"]
+        if tok.get("refresh_token"):
+            merged["refresh_token"] = tok["refresh_token"]
+        expires_in = int(tok.get("expires_in") or 21600)
+        merged["expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+        ).isoformat().replace("+00:00", "Z")
+        fresh[key] = merged
+        GROK_AUTH.write_text(json.dumps(fresh, indent=2) + "\n", encoding="utf-8")
+        GROK_AUTH.chmod(0o600)
+    except OSError:
+        pass  # 写回失败最多下次再 refresh，不影响本次查询
+    return tok["access_token"]
+
+
+def quota_grok():
+    """Grok Build 周额度（CLI 内部 billing 接口，与 /usage 同源；未公开，字段可能变）。"""
+    token = _grok_access_token()
+    if not token:
+        return None
+    d = _http_get_json(GROK_BILLING_URL, {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/json",
+        "User-Agent": "grok-usage-script/1.0",
+        "x-grok-client-mode": "cli",
+        "x-grok-client-identifier": "grok-shell",
+        "x-grok-client-version": "1.0.3",
+    }, timeout=15)
+    cfg = d.get("config") or {}
+    pct = cfg.get("creditUsagePercent")
+    if pct is None:
+        return None
+    period = cfg.get("currentPeriod") or {}
+    return {"windows": [{"key": "week", "pct": round(float(pct)),
+                         "reset": period.get("end") or ""}]}
+
+
 class QuotaPoller:
     """慢轮询各家额度，单家失败沿用该家的旧数据，页面永远有东西显示。"""
 
@@ -449,15 +542,16 @@ class QuotaPoller:
 
     def poll_once(self):
         fresh = {}
-        for key, fn in (("cco", quota_cco), ("ccs", quota_ccs)):
+        for key, fn in (("cco", quota_cco), ("ccs", quota_ccs), ("grok", quota_grok)):
             try:
                 fresh[key] = fn()
             except Exception:
                 fresh[key] = None
         with self.lock:
             old = self.latest
-            merged = {"grok": None}
+            merged = {}
             merged["cco"] = fresh["cco"] or old.get("cco")
+            merged["grok"] = fresh["grok"] or old.get("grok")
             if fresh["ccs"] is None:
                 merged["ccs"] = old.get("ccs")
             else:

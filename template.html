@@ -425,6 +425,9 @@ function quotaZone(key) {
   if (key === 'cco' && Q.cco) {
     // 官方只有两行，宽度够，重置时间内联
     rows = Q.cco.windows.map(w => quotaRow(key, '', w, true, false)).join('');
+  } else if (key === 'grok' && Q.grok) {
+    // grok 只有周额度一个窗口（CLI 内部 billing 接口），同 cco 处理
+    rows = Q.grok.windows.map(w => quotaRow(key, '', w, true, false)).join('');
   } else if (key === 'ccs' && Q.ccs) {
     // Kimi / MiniMax 各自独立两行；四行都内联时间会太宽，收进 tooltip
     for (const prov of Q.ccs.providers) {
@@ -436,7 +439,7 @@ function quotaZone(key) {
       rows += prov.windows.map(w => quotaRow(key, short, w, false, prov.stale)).join('');
     }
   }
-  // grok 没有公开额度接口，不画
+  // grok/ccs 无数据时不画
   return rows ? `<div class="quota">${rows}</div>` : '';
 }
 
@@ -802,7 +805,7 @@ info.innerHTML = `
   <div><b>去重</b>：Claude 按 <code>message.id</code>（流式重复多），Grok 按 <code>session+prompt_id+模型</code>（天然无重复）。</div>
   <div><b>时区</b>：Claude 的 UTC 串与 Grok 的 unix 秒都已转本机时区。</div>
   <div><b>费用</b>：只有 Grok 记 <code>costUsdTicks</code>，按 1e-9 USD 推定且是订阅下的名义值，不等于实际扣费。</div>
-  <div><b>卡片额度区</b>：账号套餐的 5 小时窗与每周窗已用量，每 3 分钟轮询一次，与时间窗口无关。Kimi / MiniMax 各自独立查询；Grok 没有公开额度接口，故无额度区。查询失败时显示上一次成功的数据。</div>
+  <div><b>卡片额度区</b>：账号套餐的 5 小时窗与每周窗已用量，每 3 分钟轮询一次，与时间窗口无关。Kimi / MiniMax 各自独立查询；Grok 走未公开的 CLI billing 接口（与 /usage 同源，仅周额度）。查询失败时显示上一次成功的数据。</div>
   <div><b>刷新</b>：每 60 秒自动同步，只读本地会话记录，不消耗 token。</div>`;
 const infoBtn = document.getElementById('info-btn');
 infoBtn.addEventListener('click', () => { info.hidden = !info.hidden; });
