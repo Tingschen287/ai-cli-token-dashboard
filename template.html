@@ -629,15 +629,13 @@ function renderCalendar() {
       </div>`;
   }).join('');
 
-  // 底部只留分档规则说明，色阶已经各归各行
+  // 底部不再放分档说明，色阶与「少/多」图例已各归各行
 
   document.getElementById('view').innerHTML = `
     <div class="months" style="grid-template-columns:repeat(${monthCols.length},${cell}px);--gap:${GAP}px">
       ${monthCols.map(m => `<span>${m}</span>`).join('')}
     </div>
-    <div class="cal-stack" style="--cell:${cell}px;--gap:${GAP}px">${rows}</div>
-    <div class="legend"><span class="sep"></span>
-      <span>${weekly ? '按周合计分档' : '按分位数分档'}</span></div>`;
+    <div class="cal-stack" style="--cell:${cell}px;--gap:${GAP}px">${rows}</div>`;
 
   document.getElementById('scale-note').textContent =
     weekly ? '同一列为一周' : '';
