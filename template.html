@@ -171,15 +171,16 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: block; }
 .legend .lramp { display: inline-flex; gap: 2px; }
 
-/* 行尾：图例 + 额度一行排开。额度是账号套餐的实时状态，不随 activeWindow() 变 */
-.cal-foot { display: flex; align-items: center; gap: 16px; flex: none; margin-top: 5px; flex-wrap: wrap; }
-.qinline { display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap;
+/* 行尾：图例 + 额度一行排开。额度是账号套餐的实时状态，不随 activeWindow() 变。
+   flex-wrap: wrap 兜底极窄屏，但优先靠压缩 qbar/gap 让 ccs 四窗口在 ~1024 也能一行 */
+.cal-foot { display: flex; align-items: center; gap: 12px; flex: none; margin-top: 5px; flex-wrap: wrap; }
+.qinline { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;
            font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.qinline .qprov { display: inline-flex; align-items: center; gap: 8px; }
+.qinline .qprov { display: inline-flex; align-items: center; gap: 6px; }
 .qinline .qp { font-weight: 600; }
 .qinline .qsep { color: var(--border); }
-.qinline .qgrp { display: inline-flex; align-items: center; gap: 5px; }
-.qinline .qbar { width: 56px; height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; flex: none; }
+.qinline .qgrp { display: inline-flex; align-items: center; gap: 4px; }
+.qinline .qbar { width: 40px; height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; flex: none; }
 .qinline .qbar i { display: block; height: 100%; border-radius: 3px; }
 .qinline .qn { font-weight: 600; }
 .qinline .qerr { font-style: italic; }
