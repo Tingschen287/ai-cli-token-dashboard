@@ -180,7 +180,10 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 /* ccs 卡片右上角：当前可用模型的 logo（与 .picon 同尺寸 13px），fill 写死各品牌色 */
 .card .k .models { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .card .k .models .mlogo { width: 13px; height: 13px; display: block; }
-.card .v { font-size: 19px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.card .v { font-size: 19px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums;
+           display: flex; align-items: baseline; gap: 6px; }
+.card .v .vsub { font-size: 9px; font-weight: 400; color: var(--muted); letter-spacing: 0;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .card .m { color: var(--muted); font-size: 10.5px; margin-top: 2px; font-variant-numeric: tabular-nums;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* ccs 卡片横贯整行：额度行多，用满宽度排成两列才不挤 */
@@ -507,15 +510,16 @@ function renderMeta() {
   for (const p of PROFILES) {
     const d = acc[p.key];
     const extra = [];
-    if (d.reasoning) extra.push(`推理 ${human(d.reasoning)}`);
+    if (d.reasoning) extra.push(`reason ${human(d.reasoning)}`);
     // ticks 单位按 1e-9 USD 推定；grok 是订阅登录，这只是名义价值
     if (d.cost_ticks) {
       const usd = d.cost_ticks / 1e9;
       // 单日窗口下金额常常不足 $1，取整会全变成 $0
-      extra.push(`名义 ≈$${usd.toFixed(usd >= 10 ? 0 : 2)}`);
+      extra.push(`≈$${usd.toFixed(usd >= 10 ? 0 : 2)}`);
     }
-    // 窄屏会把这行截断成省略号，挂 title 保证信息不丢
-    const sub = `缓存读 ${human(d.cache_read)} · ${fmt(d.msgs)} 次调用${extra.length ? ' · ' + extra.join(' · ') : ''}`;
+    // 副信息接在大数字同一行右侧：cache 读量 · 调用次数×，再加推理/名义金额
+    // 窄屏会截断成省略号，挂 title 保证信息不丢
+    const sub = `cache ${human(d.cache_read)} · ${fmt(d.msgs)}×${extra.length ? ' · ' + extra.join(' · ') : ''}`;
     // ccs 卡片右上角列出当前可用模型的 logo（Kimi/MiniMax/GLM）
     const models = p.key === 'ccs'
       ? `<span class="models" title="当前可用模型：Kimi · MiniMax · GLM">`
@@ -525,8 +529,7 @@ function renderMeta() {
     byKey[p.key] = `
       <div class="card${p.key === 'ccs' ? ' wide' : ''}">
         <div class="k"><img class="picon" src="${LOGOS[p.key]}" alt=""><span class="name">${p.label}</span>${models}</div>
-        <div class="v" title="${fmt(d.incr)} tokens">${human(d.incr)}</div>
-        <div class="m" title="${sub}">${sub}</div>${quotaZone(p.key)}
+        <div class="v" title="${fmt(d.incr)} tokens · ${sub}">${human(d.incr)}<span class="vsub" title="${sub}">${sub}</span></div>${quotaZone(p.key)}
       </div>`;
   }
 
