@@ -120,6 +120,9 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 }
 .panel-head h2 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
 .panel-head .note { color: var(--muted); font-size: 11px; }
+/* 合计从卡片挪到两个分段控件中间：作为窗口总量的常驻锚点 */
+.head-total { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.head-total b { color: var(--text); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
 
 /* ---------- 左：日历 ---------- */
 .cal-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -177,6 +180,9 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .card .v { font-size: 19px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .card .m { color: var(--muted); font-size: 10.5px; margin-top: 2px; font-variant-numeric: tabular-nums;
            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* ccs 卡片横贯整行：额度行多，用满宽度排成两列才不挤 */
+.card.wide { grid-column: 1 / -1; }
+.card.wide .quota { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
 
 /* 卡片额度区：账号套餐的实时状态，与时间窗口无关，自成一块 */
 .card .quota { margin-top: 7px; padding-top: 6px; border-top: 1px solid var(--border);
@@ -267,6 +273,7 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
           <button data-view="cumulative" aria-pressed="false">累计</button>
         </div>
         <span class="note" id="scale-note"></span>
+        <span class="head-total" id="head-total"></span>
         <div class="seg" id="range-seg">
           <button data-weeks="13" aria-pressed="false">3 个月</button>
           <button data-weeks="26" aria-pressed="false">6 个月</button>
@@ -467,7 +474,8 @@ function renderMeta() {
   document.getElementById('total').innerHTML =
     `全期增量 <b>${human(lifeIncr)}</b> · 缓存读 ${human(lifeRead)} · ${firstDate} → ${lastDate}`;
 
-  const cards = PROFILES.map(p => {
+  const byKey = {};
+  for (const p of PROFILES) {
     const d = acc[p.key];
     const extra = [];
     if (d.reasoning) extra.push(`推理 ${human(d.reasoning)}`);
@@ -479,24 +487,25 @@ function renderMeta() {
     }
     // 窄屏会把这行截断成省略号，挂 title 保证信息不丢
     const sub = `缓存读 ${human(d.cache_read)} · ${fmt(d.msgs)} 次调用${extra.length ? ' · ' + extra.join(' · ') : ''}`;
-    return `
-      <div class="card">
+    byKey[p.key] = `
+      <div class="card${p.key === 'ccs' ? ' wide' : ''}">
         <div class="k"><img class="picon" src="${LOGOS[p.key]}" alt=""><span class="name">${p.label}</span></div>
         <div class="v" title="${fmt(d.incr)} tokens">${human(d.incr)}</div>
         <div class="m" title="${sub}">${sub}</div>${quotaZone(p.key)}
       </div>`;
-  }).join('');
+  }
+
+  // 布局：cco 与 grok 并排，ccs 额度行最多故横贯整行；合计挪到左侧顶栏
+  const order = ['cco', 'grok', 'ccs'];
+  document.getElementById('cards').innerHTML =
+    order.filter(k => byKey[k]).map(k => byKey[k]).join('');
 
   const totalIncr = PROFILES.reduce((s, p) => s + acc[p.key].incr, 0);
   const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);
   // 去重条数和扫描耗时属于全期扫描信息，与窗口无关，收进 title
-  const scanInfo = `全期已去重 ${fmt(totalDup)} 条 · 扫描 ${DATA.scan ? DATA.scan.seconds : '?'}s`;
-  document.getElementById('cards').innerHTML = cards + `
-    <div class="card">
-      <div class="k"><span class="name">合计</span></div>
-      <div class="v" title="${fmt(totalIncr)} tokens">${human(totalIncr)}</div>
-      <div class="m" title="${scanInfo}">${win.label}</div>
-    </div>`;
+  const headTotal = document.getElementById('head-total');
+  headTotal.innerHTML = `合计 <b>${human(totalIncr)}</b> · ${win.label}`;
+  headTotal.title = `${fmt(totalIncr)} tokens · 全期已去重 ${fmt(totalDup)} 条 · 扫描 ${DATA.scan ? DATA.scan.seconds : '?'}s`;
 }
 
 /* ---------- 左：日历 ----------
