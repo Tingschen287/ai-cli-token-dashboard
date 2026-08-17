@@ -184,6 +184,11 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .qinline .qbar i { display: block; height: 100%; border-radius: 3px; }
 .qinline .qn { font-weight: 600; }
 .qinline .qerr { font-style: italic; }
+/* 窄屏(≤1279px)：ccs 两家四窗口带重置时间一行放不下，只保留每家 5h 的重置
+   时间内联，周重置收进 tooltip（hover 看）。cco/grok 窗口少不受影响 */
+@media (max-width: 1279px) {
+  .qinline .qprov .qgrp-w .qr { display: none; }
+}
 
 /* ---------- 右：排行表 ---------- */
 /* 放不下就滚动，不再按高度裁行数——裁掉的长尾用户根本看不到 */
@@ -429,11 +434,12 @@ function fmtReset(iso, style) {
 
 function quotaGroup(key, w, showReset, stale, color) {
   const pct = Math.max(0, Math.min(100, w.pct || 0));
+  const weekly = w.key !== '5h';
   const resetIso = w.reset || (w.reset_ms ? new Date(w.reset_ms).toISOString() : '');
-  const reset = fmtReset(resetIso, w.key === '5h' ? 'time' : 'date');
+  const reset = fmtReset(resetIso, weekly ? 'date' : 'time');
   const tip = (reset ? `↻ ${reset} 重置` : '暂无重置时间') + (stale ? ' · 查询失败，显示上次数据' : '');
-  return `<span class="qgrp" title="${tip}">
-    <span class="qw">${w.key === '5h' ? '5h' : '周'}</span>
+  return `<span class="qgrp${weekly ? ' qgrp-w' : ''}" title="${tip}">
+    <span class="qw">${weekly ? '周' : '5h'}</span>
     <span class="qbar"><i style="width:${pct}%;background:${color || COLORS[key]}"></i></span>
     <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
     ${showReset && reset ? `<span class="qr">↻${reset}</span>` : ''}
@@ -463,7 +469,7 @@ function quotaInline(key) {
       const color = isMmx ? MMX_COLOR : null;
       const inner = (prov.error && !prov.windows.length)
         ? `<span class="qerr">${prov.error}</span>`
-        : prov.windows.map(w => quotaGroup(key, w, false, prov.stale, color)).join('');
+        : prov.windows.map(w => quotaGroup(key, w, true, prov.stale, color)).join('');
       return `<span class="qprov" title="${prov.error || ''}"><span class="qp">${short}</span>${inner}</span>`;
     }).join('<span class="qsep">|</span>');
   }
