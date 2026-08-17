@@ -185,9 +185,10 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .qinline .qbar i { display: block; height: 100%; border-radius: 3px; }
 .qinline .qn { font-weight: 600; }
 .qinline .qerr { font-style: italic; }
-/* ccs 两家供应商各占一行：inline-grid 两行，宽度取最宽行(不撑满)，行间距 1px 挨近。
-   图例能和 Minimax(第一行)同行，Kimi(第二行)对齐 qinline 起始 */
-.qinline-ccs { display: inline-grid; grid-template-columns: max-content; row-gap: 1px; }
+/* ccs 两家供应商各占一行：inline-grid 三列(供应商名|5h|周)两行，列宽跨行统一，
+   5h/周进度条严格对齐。图例和 Minimax(第一行)同行，Kimi(第二行)对齐，row-gap 1px 挨近 */
+.qinline-ccs { display: inline-grid; grid-template-columns: max-content max-content max-content;
+               column-gap: 6px; row-gap: 1px; }
 
 /* ---------- 右：排行表 ---------- */
 /* 放不下就滚动，不再按高度裁行数——裁掉的长尾用户根本看不到 */
@@ -462,18 +463,21 @@ function quotaInline(key) {
     out = Q.grok.windows.map(w => quotaGroup(key, w, true, false)).join('');
   } else if (key === 'ccs' && Q.ccs) {
     // Kimi / MiniMax 各自独立查询，互不合并且两家都画。
-    // 用 inline-grid 两行：Minimax 一行、Kimi 一行，行间距由 row-gap 控制。
-    // qinline 宽度取最宽行(≈Minimax 行)，图例能与其同行，形成「图例+Minimax 一行 / Kimi 一行」。
-    out = Q.ccs.providers.map(prov => {
+    // 用 inline-grid 三列(供应商名|5h|周)两行：列宽跨行统一，5h/周进度条严格对齐。
+    // 图例能和 Minimax(第一行)同行，Kimi(第二行)对齐，row-gap 1px 挨近。
+    const cells = [];
+    Q.ccs.providers.forEach(prov => {
       const isMmx = /^minimax$/i.test(prov.name);
       const short = isMmx ? 'Minimax' : prov.name.replace(/\s*For Coding\s*/i, '');
       const color = isMmx ? MMX_COLOR : null;
-      const inner = (prov.error && !prov.windows.length)
-        ? `<span class="qerr">${prov.error}</span>`
-        : prov.windows.map(w => quotaGroup(key, w, true, prov.stale, color)).join('');
-      return `<span class="qprov" title="${prov.error || ''}"><span class="qp">${short}</span>${inner}</span>`;
-    }).join('');
-    return out ? `<span class="qinline qinline-ccs">${out}</span>` : '';
+      if (prov.error && !prov.windows.length) {
+        cells.push(`<span class="qp" title="${prov.error}">${short}</span>`, `<span class="qerr">${prov.error}</span>`, '');
+      } else {
+        cells.push(`<span class="qp" title="${prov.error || ''}">${short}</span>`);
+        prov.windows.forEach(w => cells.push(quotaGroup(key, w, true, prov.stale, color)));
+      }
+    });
+    return `<span class="qinline qinline-ccs">${cells.join('')}</span>`;
   }
   return out ? `<span class="qinline">${out}</span>` : '';
 }
