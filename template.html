@@ -399,13 +399,14 @@ function windowTotals() {
   const win = activeWindow();
   const acc = {};
   for (const p of PROFILES) {
-    acc[p.key] = { incr: 0, cache_read: 0, msgs: 0, reasoning: 0, cost_ticks: 0 };
+    acc[p.key] = { incr: 0, cache_read: 0, input: 0, msgs: 0, reasoning: 0, cost_ticks: 0 };
   }
   for (const r of DATA.daily) {
     const a = acc[r.profile];
     if (!a || !win.test(r.date)) continue;
     a.incr += r.incr;
     a.cache_read += r.cache_read;
+    a.input += r.input || 0;
     a.msgs += r.msgs;
     a.reasoning += r.reasoning || 0;
     a.cost_ticks += r.cost_ticks || 0;
@@ -493,6 +494,10 @@ function winSub(d) {
     // 单日窗口下金额常常不足 $1，取整会全变成 $0
     extra.push(`≈$${usd.toFixed(usd >= 10 ? 0 : 2)}`);
   }
+  // 缓存命中率 = cache_read / (cache_read + 非缓存输入)，即输入侧 token 有多大比例直接命中缓存。
+  // 输入侧完全没有流量（cache_read 和 input 都为 0）时分母为 0，不显示，避免误导成 0%。
+  const read = d.cache_read || 0, fresh = d.input || 0;
+  if (read + fresh > 0) extra.unshift(`命中率 ${(read / (read + fresh) * 100).toFixed(0)}%`);
   return `cache ${human(d.cache_read)} · ${fmt(d.msgs)}×${extra.length ? ' · ' + extra.join(' · ') : ''}`;
 }
 
