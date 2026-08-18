@@ -229,6 +229,9 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .pie-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
 .pie-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pie-val { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pie-label { fill: #fff; font-size: 11px; font-weight: 600; text-anchor: middle;
+             dominant-baseline: central; pointer-events: none; }
+.pie-wrap path:hover, .pie-wrap circle:hover { filter: brightness(1.12); }
 
 /* ---------- 浮层 ---------- */
 #tip {
@@ -735,7 +738,7 @@ function renderRank(id, rows, nameKey) {
   }).join('');
 }
 
-/* 占比环形图：每扇区一个名字，大小 = 占总量的比例。
+/* 占比饼图：实心扇区，每块直接标百分比；图例给名字和用量。
    颜色沿用堆叠条的规则——取该名字里占比最大的那段来源色，保证列表/占比两种看法同色系。 */
 function renderPie(box, id, list) {
   const total = list.reduce((s, g) => s + g.total, 0);
@@ -746,21 +749,34 @@ function renderPie(box, id, list) {
     return id === 'models' ? modelColor(p.key, g.name) : COLORS[p.key];
   };
 
-  const R = 54, CX = 60, CY = 60, SW = 26; // 半径/圆心/环宽
-  const CIRC = 2 * Math.PI * R;
-  let acc = 0;
-  const arcs = list.map(g => {
+  const CX = 60, CY = 60, R = 56;
+  const pt = (ang, r) => [CX + r * Math.cos(ang), CY + r * Math.sin(ang)];
+  let acc = -Math.PI / 2; // 从正上方开始，顺时针
+  let slices = '', labels = '';
+  for (const g of list) {
     const frac = g.total / total;
-    const len = frac * CIRC;
-    // stroke-dasharray 画弧，rotate 把起点挪到当前累计角度；-90 让 0 度从正上方开始
-    const arc = `<circle cx="${CX}" cy="${CY}" r="${R}" fill="none"
-      stroke="${colorOf(g)}" stroke-width="${SW}"
-      stroke-dasharray="${len.toFixed(2)} ${(CIRC - len).toFixed(2)}"
-      transform="rotate(${(acc / CIRC * 360 - 90).toFixed(2)} ${CX} ${CY})"
-      data-sn="${g.name}" data-sv="${g.total}" data-sp="${(frac * 100).toFixed(1)}"/>`;
-    acc += len;
-    return arc;
-  }).join('');
+    const a0 = acc, a1 = acc + frac * 2 * Math.PI;
+    acc = a1;
+    const col = colorOf(g);
+    if (frac >= 0.9999) {
+      // 单一项目占满整圆时弧线首尾重合画不出来，直接画个整圆
+      slices += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="${col}"
+        data-sn="${g.name}" data-sv="${g.total}" data-sp="100.0"/>`;
+    } else {
+      const [x0, y0] = pt(a0, R), [x1, y1] = pt(a1, R);
+      const large = frac > 0.5 ? 1 : 0;
+      slices += `<path d="M${CX},${CY} L${x0.toFixed(2)},${y0.toFixed(2)}`
+        + ` A${R},${R} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)} Z" fill="${col}"
+        stroke="var(--panel)" stroke-width="1"
+        data-sn="${g.name}" data-sv="${g.total}" data-sp="${(frac * 100).toFixed(1)}"/>`;
+    }
+    // 太小的扇区标进去会叠成一团，交给图例；≥6% 的才把百分比标在扇区里
+    if (frac >= 0.06) {
+      const mid = (a0 + a1) / 2;
+      const [lx, ly] = pt(mid, R * 0.62);
+      labels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" class="pie-label">${(frac * 100).toFixed(0)}%</text>`;
+    }
+  }
 
   const legend = list.map(g => {
     const pct = (g.total / total * 100).toFixed(1);
@@ -772,7 +788,7 @@ function renderPie(box, id, list) {
   }).join('');
 
   box.innerHTML = `<div class="pie-wrap">
-    <svg width="120" height="120" viewBox="0 0 120 120">${arcs}</svg>
+    <svg width="120" height="120" viewBox="0 0 120 120">${slices}${labels}</svg>
     <div class="pie-legend">${legend}</div>
   </div>`;
 }
@@ -792,8 +808,8 @@ function placeTip(anchor) {
 }
 
 document.addEventListener('mouseover', e => {
-  // 占比环形图的扇区：显示这个名字的总量和占比
-  const arc = e.target.closest('.pie-wrap circle');
+  // 占比饼图的扇区：显示这个名字的总量和占比
+  const arc = e.target.closest('.pie-wrap path, .pie-wrap circle');
   if (arc) {
     tip.innerHTML = `<b>${arc.dataset.sn}</b><br><b>${human(+arc.dataset.sv)}</b>`
       + `<span class="sm"> · 占 ${arc.dataset.sp}%</span>`;
