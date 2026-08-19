@@ -3,34 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Token看板</title>
+<title>Token Dashboard</title>
 <!-- 图标就是热力图本身：Claude 橙底 + 深浅白格。内联 SVG，不引外部资源；
      16px 下格子仍分得清，比通用图表 emoji 更认得出是这个看板 -->
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='3.6' fill='%23d97757'/><g fill='%23fff'><rect x='2.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.30'/><rect x='5.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.95'/><rect x='8.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.55'/><rect x='11.3' y='3.8' width='2.4' height='2.4' rx='.6' opacity='.25'/><rect x='2.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='.50'/><rect x='5.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='.75'/><rect x='8.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='1'/><rect x='11.3' y='6.8' width='2.4' height='2.4' rx='.6' opacity='.40'/><rect x='2.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.25'/><rect x='5.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.45'/><rect x='8.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.70'/><rect x='11.3' y='9.8' width='2.4' height='2.4' rx='.6' opacity='.90'/></g></svg>">
 <style>
 :root {
-  --bg: #ffffff;
-  --panel: #ffffff;
-  --border: #e6e6ea;
-  --text: #1d1d1f;
-  --muted: #86868b;
-  --faint: #f5f5f7;
-  --empty: #f0f0f3;
-  --accent: #0071e3;
-  --shadow: 0 1px 3px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.04);
-  --radius: 13px;
+  /* Anthropic 风：暖米白底 + 近黑正文 + 暖灰次要文字 + 品牌橙点缀。
+     编辑排版质感，阴影收窄到几乎没有，靠留白和细线分层 */
+  --bg: #faf9f5;
+  --panel: #f4f2ec;
+  --border: #e3dfd6;
+  --text: #141413;
+  --muted: #73726c;
+  --faint: #ece9e1;
+  --empty: #e2ddd2;
+  --accent: #d97757;
+  --shadow: 0 1px 2px rgba(20,20,19,.04);
+  --radius: 12px;
   --pad: 16px;
+  /* 标题衬线栈：编辑感的来源。正文/数字仍用 sans 保证可读 */
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+           "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #131316;
-    --panel: #1c1c1f;
-    --border: #2e2e33;
-    --text: #f5f5f7;
-    --muted: #8e8e93;
-    --faint: #232327;
-    --empty: #26262b;
-    --accent: #2b8fff;
+    /* 对应的暖黑，不是纯黑 */
+    --bg: #191817;
+    --panel: #201f1d;
+    --border: #35322e;
+    --text: #f0eee9;
+    --muted: #9b988f;
+    --faint: #272522;
+    --empty: #37332d;
+    --accent: #e0855f;
     --shadow: none;
   }
 }
@@ -74,8 +80,10 @@ body {
 }
 
 /* ---------- 顶栏 ---------- */
-.topbar { display: flex; align-items: center; gap: 16px; flex: none; }
-h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white-space: nowrap; }
+.topbar { display: flex; align-items: baseline; gap: 16px; flex: none; }
+/* 大标题用衬线细字重，是这套风格的标志 */
+h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
+     letter-spacing: -.01em; margin: 0; white-space: nowrap; }
 .topbar .total { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .topbar .total b { color: var(--text); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
 .topbar .spacer { flex: 1; }
@@ -118,7 +126,7 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-wrap: wrap; flex: none; margin-bottom: 10px;
 }
-.panel-head h2 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -.01em; }
+.panel-head h2 { font-family: var(--serif); font-size: 16px; font-weight: 500; margin: 0; letter-spacing: 0; }
 .panel-head .note { color: var(--muted); font-size: 11px; }
 /* 合计从卡片挪到两个分段控件中间：作为窗口总量的常驻锚点 */
 .head-total { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -211,6 +219,21 @@ h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; margin: 0; white
 .stack span:hover { filter: brightness(1.25); }
 .empty { color: var(--muted); font-size: 11.5px; padding: 4px 0; }
 
+/* ---------- 按模型：品牌条 ----------
+   logo 在条前，条加高到 20px。条内放得下名字就白字放条内；
+   条太短放不下时，名字放条外右侧用普通文字色，保证短条也可读。 */
+.mrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; flex: none; }
+.mrow.no-logo { grid-template-columns: 1fr auto; }
+.mrow .mlogo { width: 15px; height: 15px; display: block; }
+.mtrack { display: flex; align-items: center; min-width: 0; }
+.mbar { height: 20px; border-radius: 6px; display: flex; align-items: center;
+        padding: 0 8px; box-sizing: border-box; min-width: 2px; flex: none; }
+.mbar span { color: #fff; font-size: 11px; font-weight: 500; line-height: 1;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mbar:hover { filter: brightness(1.08); }
+.mname-out { font-size: 11.5px; color: var(--text); margin-left: 7px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
 /* 排行面板头部的 列表/占比 切换：复用 .seg 样式，只做小号版 */
 .rank-toggle { padding: 1px; }
 .rank-toggle button { font-size: 10.5px; padding: 2px 8px; }
@@ -265,7 +288,7 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
 <body>
 <div class="app">
   <header class="topbar">
-    <h1>Token 活动</h1>
+    <h1>Token Activity</h1>
     <span class="total" id="total"></span>
     <span class="spacer"></span>
     <span class="sync" id="sync"></span>
@@ -276,25 +299,25 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
         <path d="M13.4 1.2v3.1h-3.1" fill="none" stroke="currentColor"
               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <span id="refresh-text">刷新</span>
+      <span id="refresh-text">Refresh</span>
     </button>
-    <button class="btn icon" id="info-btn" aria-label="口径说明" title="口径说明">ⓘ</button>
+    <button class="btn icon" id="info-btn" aria-label="Methodology" title="Methodology">ⓘ</button>
   </header>
 
   <div class="stage">
     <section class="panel">
       <div class="panel-head">
         <div class="seg" id="view-seg">
-          <button data-view="daily" aria-pressed="true">每日</button>
-          <button data-view="weekly" aria-pressed="false">每周</button>
-          <button data-view="cumulative" aria-pressed="false">累计</button>
+          <button data-view="daily" aria-pressed="true">Daily</button>
+          <button data-view="weekly" aria-pressed="false">Weekly</button>
+          <button data-view="cumulative" aria-pressed="false">Cumulative</button>
         </div>
         <span class="note" id="scale-note"></span>
         <span class="head-total" id="head-total"></span>
         <div class="seg" id="range-seg">
-          <button data-weeks="13" aria-pressed="false">3 个月</button>
-          <button data-weeks="26" aria-pressed="false">6 个月</button>
-          <button data-weeks="53" aria-pressed="true">1 年</button>
+          <button data-weeks="13" aria-pressed="false">3 mo</button>
+          <button data-weeks="26" aria-pressed="true">6 mo</button>
+          <button data-weeks="53" aria-pressed="false">1 yr</button>
         </div>
       </div>
       <div class="cal-wrap" id="view"></div>
@@ -303,12 +326,12 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
     <aside class="side">
       <section class="panel">
         <div class="panel-head">
-          <h2>按模型</h2>
+          <h2>By Model</h2>
           <span style="display:inline-flex;align-items:center;gap:8px">
             <span class="note" id="models-scope"></span>
             <span class="seg rank-toggle" id="models-toggle">
-              <button data-mode="list" aria-pressed="true">列表</button>
-              <button data-mode="pie" aria-pressed="false">占比</button>
+              <button data-mode="list" aria-pressed="true">List</button>
+              <button data-mode="pie" aria-pressed="false">Share</button>
             </span>
           </span>
         </div>
@@ -316,12 +339,12 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
       </section>
       <section class="panel">
         <div class="panel-head">
-          <h2>按项目</h2>
+          <h2>By Project</h2>
           <span style="display:inline-flex;align-items:center;gap:8px">
             <span class="note" id="projects-scope"></span>
             <span class="seg rank-toggle" id="projects-toggle">
-              <button data-mode="list" aria-pressed="true">列表</button>
-              <button data-mode="pie" aria-pressed="false">占比</button>
+              <button data-mode="list" aria-pressed="true">List</button>
+              <button data-mode="pie" aria-pressed="false">Share</button>
             </span>
           </span>
         </div>
@@ -339,10 +362,12 @@ let DATA = /*__DATA__*/null;
 
 // cco 用 Claude 品牌橙；ccs 虽然也是 Claude Code，但跑第三方模型，用紫区分；
 // grok 让出橙色改中性灰
-const COLORS = { cco: '#d97757', ccs: '#7d4bd8', grok: '#6b7280' };
+// 2026-08 改暖色底后，各品牌色统一压了一点饱和度/偏暖，避免在米白底上发荧光；
+// 色相不动，保证一眼还能认出是哪家
+const COLORS = { cco: '#d97757', ccs: '#7a55c8', grok: '#7a7268' };
 /* cc-switch 各可用模型在按模型排行里的品牌色（与卡片右上角 MODEL_LOGOS 同色）。
    ccs 默认用紫色，但有明确品牌色的模型改用自己的色，让按模型排行能区分三家。 */
-const MODEL_COLORS = { kimi: '#6E56CF', minimax: '#E73562', glm: '#3B5BFF' };
+const MODEL_COLORS = { kimi: '#6953c2', minimax: '#d94466', glm: '#4f62dd' };
 function modelColor(profile, model) {
   if (profile !== 'ccs' || !model) return COLORS[profile];
   const m = model.toLowerCase();
@@ -365,6 +390,16 @@ const MODEL_LOGOS = {
   minimax: `<svg class="mlogo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="${MODEL_COLORS.minimax}"><path d="M11.43 3.92a.86.86 0 1 0-1.718 0v14.236a1.999 1.999 0 0 1-3.997 0V9.022a.86.86 0 1 0-1.718 0v3.87a1.999 1.999 0 0 1-3.997 0V11.49a.57.57 0 0 1 1.139 0v1.404a.86.86 0 0 0 1.719 0V9.022a1.999 1.999 0 0 1 3.997 0v9.134a.86.86 0 0 0 1.719 0V3.92a1.998 1.998 0 1 1 3.996 0v11.788a.57.57 0 1 1-1.139 0zm10.572 3.105a2 2 0 0 0-1.999 1.997v7.63a.86.86 0 0 1-1.718 0V3.923a1.999 1.999 0 0 0-3.997 0v16.16a.86.86 0 0 1-1.719 0V18.08a.57.57 0 1 0-1.138 0v2a1.998 1.998 0 0 0 3.996 0V3.92a.86.86 0 0 1 1.719 0v12.73a1.999 1.999 0 0 0 3.996 0V9.023a.86.86 0 1 1 1.72 0v6.686a.57.57 0 0 0 1.138 0V9.022a2 2 0 0 0-1.998-1.997"/></svg>`,
   glm: `<svg class="mlogo" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="${MODEL_COLORS.glm}"><text x="12" y="17" text-anchor="middle" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="11" font-weight="700" letter-spacing="-0.5">GLM</text></svg>`,
 };
+/* 按模型排行的 logo：与 modelColor 同一套判定。claude 系用 Claude 标，
+   grok 系用 grok 标，三家 cc-switch 模型用各自的品牌标 */
+function modelLogo(profile, model) {
+  const m = (model || '').toLowerCase();
+  if (m.startsWith('glm')) return MODEL_LOGOS.glm;
+  if (m.startsWith('minimax') || m.includes('mmx')) return MODEL_LOGOS.minimax;
+  if (m === 'k3' || m.startsWith('kimi') || m.startsWith('moonshot')) return MODEL_LOGOS.kimi;
+  if (profile === 'grok') return `<img class="mlogo" src="${LOGOS.grok}" alt="">`;
+  return `<img class="mlogo" src="${LOGOS.cco}" alt="">`;
+}
 const DAY = 86400000;
 const GAP = 3;
 
@@ -431,7 +466,7 @@ function applyData(payload) {
   lastDate = allDates[allDates.length - 1];
 }
 
-let state = { view: 'daily', weeks: 53 };
+let state = { view: 'daily', weeks: 26 };
 
 /* ---------- 顶栏与窗口总量 ----------
    行标题大数字和右侧排行共用 activeWindow()：切到「每日」时排行只剩今天，
@@ -466,11 +501,12 @@ function fmtReset(iso, style) {
   if (!iso) return '';
   const d = new Date(iso);
   if (isNaN(d)) return '';
-  if (style === 'time') {
-    let h = d.getHours();
-    const m = String(d.getMinutes()).padStart(2, '0'), ap = h >= 12 ? 'pm' : 'am';
-    return `${h % 12 || 12}:${m}${ap}`;
-  }
+  let h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0'), ap = h >= 12 ? 'pm' : 'am';
+  const hm = `${h % 12 || 12}:${m}${ap}`;
+  if (style === 'time') return hm;
+  // 周重置：日期+时刻。接口返回的是完整时间戳，只显示日期会丢掉「几点重置」
+  if (style === 'datetime') return `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
@@ -478,19 +514,19 @@ function quotaGroup(key, w, showReset, stale, color) {
   const pct = Math.max(0, Math.min(100, w.pct || 0));
   const weekly = w.key !== '5h';
   const resetIso = w.reset || (w.reset_ms ? new Date(w.reset_ms).toISOString() : '');
-  const reset = fmtReset(resetIso, weekly ? 'date' : 'time');
-  const tip = (reset ? `↻ ${reset} 重置` : '暂无重置时间') + (stale ? ' · 查询失败，显示上次数据' : '');
+  const reset = fmtReset(resetIso, weekly ? 'datetime' : 'time');
+  const tip = (reset ? `↻ resets ${reset}` : 'no reset time') + (stale ? ' · query failed, showing last data' : '');
   return `<span class="qgrp${weekly ? ' qgrp-w' : ''}" title="${tip}">
-    <span class="qw">${weekly ? '周' : '5h'}</span>
+    <span class="qw">${weekly ? 'wk' : '5h'}</span>
     <span class="qbar"><i style="width:${pct}%;background:${color || COLORS[key]}"></i></span>
     <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
     ${showReset && reset ? `<span class="qr">↻${reset}</span>` : ''}
   </span>`;
 }
 
-/* MiniMax 品牌色：官方 logo 是品红→橙渐变，取品红端 #E3177E 作为代表色，
-   与 cco 橙、ccs 紫都能拉开 */
-const MMX_COLOR = '#E3177E';
+/* MiniMax 品牌色：官方 logo 是品红→橙渐变，取品红端压饱和后的 #cf3d7a 作为代表色，
+   与 cco 橙、ccs 紫都能拉开，且在暖底上不发荧光 */
+const MMX_COLOR = '#cf3d7a';
 
 /* 行尾额度一行排开：cco/grok 窗口少，重置时间内联；ccs 两家四个窗口太长，
    供应商名在每组最前，重置时间收进 tooltip */
@@ -538,7 +574,7 @@ function winSub(d) {
   // 缓存命中率 = cache_read / (cache_read + 非缓存输入)，即输入侧 token 有多大比例直接命中缓存。
   // 输入侧完全没有流量（cache_read 和 input 都为 0）时分母为 0，不显示，避免误导成 0%。
   const read = d.cache_read || 0, fresh = d.input || 0;
-  if (read + fresh > 0) extra.unshift(`命中率 ${(read / (read + fresh) * 100).toFixed(0)}%`);
+  if (read + fresh > 0) extra.unshift(`hit ${(read / (read + fresh) * 100).toFixed(0)}%`);
   return `cache ${human(d.cache_read)} · ${fmt(d.msgs)}×${extra.length ? ' · ' + extra.join(' · ') : ''}`;
 }
 
@@ -549,14 +585,14 @@ function renderMeta() {
   const lifeIncr = PROFILES.reduce((s, p) => s + p.incr, 0);
   const lifeRead = PROFILES.reduce((s, p) => s + p.cache_read, 0);
   document.getElementById('total').innerHTML =
-    `全期增量 <b>${human(lifeIncr)}</b> · 缓存读 ${human(lifeRead)} · ${firstDate} → ${lastDate}`;
+    `lifetime <b>${human(lifeIncr)}</b> · cache read ${human(lifeRead)} · ${firstDate} → ${lastDate}`;
 
   const totalIncr = PROFILES.reduce((s, p) => s + acc[p.key].incr, 0);
   const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);
   // 去重条数和扫描耗时属于全期扫描信息，与窗口无关，收进 title
   const headTotal = document.getElementById('head-total');
-  headTotal.innerHTML = `合计 <b>${human(totalIncr)}</b> · ${win.label}`;
-  headTotal.title = `${fmt(totalIncr)} tokens · 全期已去重 ${fmt(totalDup)} 条 · 扫描 ${DATA.scan ? DATA.scan.seconds : '?'}s`;
+  headTotal.innerHTML = `total <b>${human(totalIncr)}</b> · ${win.label}`;
+  headTotal.title = `${fmt(totalIncr)} tokens · lifetime deduped ${fmt(totalDup)} · scan ${DATA.scan ? DATA.scan.seconds : '?'}s`;
 }
 
 /* ---------- 左：日历 ----------
@@ -593,7 +629,8 @@ function renderCalendar() {
     const d = new Date(t);
     if (d.getDay() !== 0) continue;
     const m = d.getMonth();
-    monthCols.push(m !== lastMonth ? (lastMonth = m, `${m + 1}月`) : '');
+    const MN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    monthCols.push(m !== lastMonth ? (lastMonth = m, MN[m]) : '');
   }
 
   const rows = PROFILES.map(p => {
@@ -625,7 +662,7 @@ function renderCalendar() {
       if (cumulative) run += row ? row.incr : 0;
       const lv = row ? level(row.incr, th) : 0;
       const bg = shade(COLORS[p.key], lv);
-      const label = weekly ? `${keyOf(key)} 起那周` : key;
+      const label = weekly ? `week of ${keyOf(key)}` : key;
       const cum = cumulative ? ` data-cum="${run}"` : '';
       const attrs = row
         ? ` data-v="1" data-col="${colIndex}" data-d="${label}" data-i="${row.incr}"`
@@ -634,14 +671,14 @@ function renderCalendar() {
       cells.push(`<i style="${bg ? 'background:' + bg : ''}"${attrs}></i>`);
     }
 
-    const unit = weekly ? Object.keys(bucket).length + ' 周'
-                        : Object.values(map).filter(r => r.incr > 0).length + ' 天';
+    const unit = weekly ? Object.keys(bucket).length + ' wk'
+                        : Object.values(map).filter(r => r.incr > 0).length + ' d';
     // 行标题：左端 logo + 名称 + 窗口大数字/副信息（口径与排行、合计一致）；
     // 右端 ccs 可用模型 logo + 范围总量小字
     const d = acc[p.key];
     const sub = winSub(d);
     const models = p.key === 'ccs'
-      ? `<span class="models" title="当前可用模型：Kimi · MiniMax · GLM">`
+      ? `<span class="models" title="Available models: Kimi · MiniMax · GLM">`
         + Object.values(MODEL_LOGOS).join('') + `</span>`
       : '';
     // 图例跟在各自行下面：色阶用本行色相，看图时不用跨行对照；
@@ -655,11 +692,11 @@ function renderCalendar() {
           <span>${p.label}</span>
           <span class="win" title="${fmt(d.incr)} tokens · ${sub}">${human(d.incr)}</span>
           <span class="winsub" title="${sub}">${sub}</span>
-          <span class="tr">${models}<span class="range">${unit}有活动 · ${human(p.incr)}</span></span>
+          <span class="tr">${models}<span class="range">${unit} active · ${human(p.incr)}</span></span>
         </div>
         <div class="cal${weekly ? ' by-week' : ''}">${cells.join('')}</div>
         <div class="cal-foot">
-          <span class="legend">少 <span class="lramp">${ramp}</span> 多</span>
+          <span class="legend">less <span class="lramp">${ramp}</span> more</span>
           ${quotaInline(p.key)}
         </div>
       </div>`;
@@ -672,7 +709,7 @@ function renderCalendar() {
     <div class="cal-stack" style="--cell:${cell}px;--gap:${GAP}px">${rows}</div>`;
 
   document.getElementById('scale-note').textContent =
-    weekly ? '同一列为一周' : cumulative ? '悬停格子看累计' : '';
+    weekly ? 'one column = one week' : cumulative ? 'hover a cell for cumulative' : '';
 }
 
 /* ---------- 右：排行 ----------
@@ -683,12 +720,12 @@ function activeWindow() {
   }
   if (state.view === 'weekly') {
     const wk = weekKey(lastDate);
-    return { test: d => weekKey(d) === wk, label: `${wk} 起那周` };
+    return { test: d => weekKey(d) === wk, label: `week of ${wk}` };
   }
   const start = new Date(parse(lastDate).getTime() - (state.weeks * 7 - 1) * DAY);
   start.setDate(start.getDate() - start.getDay());
   const from = iso(start);
-  const label = state.weeks >= 53 ? '近 1 年' : `近 ${Math.round(state.weeks / 4.345)} 个月`;
+  const label = state.weeks >= 53 ? 'past 1 yr' : `past ${Math.round(state.weeks / 4.345)} mo`;
   return { test: d => d >= from && d <= lastDate, label };
 }
 
@@ -713,30 +750,43 @@ function renderRank(id, rows, nameKey) {
   const list = [...groups.values()].sort((a, b) => b.total - a.total);
 
   if (!list.length) {
-    box.innerHTML = `<div class="empty">这个时间窗口内没有记录</div>`;
+    box.innerHTML = `<div class="empty">No activity in this window</div>`;
     return;
   }
   if (rankMode[id] === 'pie') return renderPie(box, id, list);
   const max = list[0].total;
   const label = Object.fromEntries(PROFILES.map(p => [p.key, p.label]));
 
-  box.innerHTML = list.map(g => {
-    const segs = PROFILES.filter(p => g.parts[p.key]).map(p => {
-      const v = g.parts[p.key];
-      const pct = v / g.total * 100;
-      // 按模型排行：ccs 下的 Kimi/MiniMax/GLM 用各自品牌色，否则按 profile 色
-      const bg = id === 'models' ? modelColor(p.key, g.name) : COLORS[p.key];
-      return `<span style="width:${pct.toFixed(2)}%;background:${bg}"`
-           + ` data-seg="${label[p.key]}" data-sv="${v}" data-sp="${pct.toFixed(0)}"`
-           + ` data-sn="${g.name}"></span>`;
-    }).join('');
-    return `
-      <div class="rank-row">
-        <div class="rank-name" title="${g.name}">${g.name}</div>
+  // 排行宽带样式（按模型/按项目共用）：条内放得下名字就白字放条内（居左），
+  // 条太短时名字放条外右侧用普通文字色，避免短条把名字截成省略号。
+  // 条色取该项里占比最大来源的品牌色；模型面板额外在条前放 logo。
+  {
+    const trackPx = 420; // 轨道近似宽度，用于估算名字放不放得下；差一点无碍，只是内/外之别
+    const totalAll = list.reduce((s, x) => s + x.total, 0);
+    box.innerHTML = list.map(g => {
+      const dom = PROFILES.reduce((best, p) =>
+        (g.parts[p.key] || 0) > (g.parts[best.key] || 0) ? p : best, PROFILES[0]).key;
+      const bg = id === 'models' ? modelColor(dom, g.name) : COLORS[dom];
+      const w = g.total / max * 100;
+      const needPx = g.name.length * 6.6 + 18; // 名字宽度 + 内边距
+      const inside = (w / 100 * trackPx) >= needPx;
+      const logo = id === 'models' ? modelLogo(dom, g.name) : '';
+      return `
+      <div class="mrow${id === 'models' ? '' : ' no-logo'}">
+        ${logo}
+        <div class="mtrack">
+          <div class="mbar" style="width:${w.toFixed(1)}%;background:${bg}"
+               data-sn="${g.name}" data-sv="${g.total}"
+               data-sp="${(g.total / totalAll * 100).toFixed(0)}">
+            ${inside ? `<span>${g.name}</span>` : ''}
+          </div>
+          ${inside ? '' : `<span class="mname-out">${g.name}</span>`}
+        </div>
         <div class="rank-val">${human(g.total)}</div>
-        <div class="stack" style="width:${(g.total / max * 100).toFixed(1)}%">${segs}</div>
       </div>`;
-  }).join('');
+    }).join('');
+    return;
+  }
 }
 
 /* 占比饼图：实心扇区，每块直接标百分比；图例给名字和用量。
@@ -813,29 +863,37 @@ document.addEventListener('mouseover', e => {
   const arc = e.target.closest('.pie-wrap path, .pie-wrap circle');
   if (arc) {
     tip.innerHTML = `<b>${arc.dataset.sn}</b><br><b>${human(+arc.dataset.sv)}</b>`
-      + `<span class="sm"> · 占 ${arc.dataset.sp}%</span>`;
+      + `<span class="sm"> · ${arc.dataset.sp}%</span>`;
     placeTip(arc);
+    return;
+  }
+  // 按模型品牌条：显示该模型总量和占窗口比例
+  const mbar = e.target.closest('.mbar');
+  if (mbar) {
+    tip.innerHTML = `<b>${mbar.dataset.sn}</b><br><b>${human(+mbar.dataset.sv)}</b>`
+      + `<span class="sm"> · ${mbar.dataset.sp}%</span>`;
+    placeTip(mbar);
     return;
   }
   // 堆叠条的某一段：显示这个项目里该来源的具体用量
   const seg = e.target.closest('.stack span');
   if (seg) {
     tip.innerHTML = `<b>${seg.dataset.sn}</b><br>${seg.dataset.seg} `
-      + `<b>${human(+seg.dataset.sv)}</b><span class="sm"> · 占 ${seg.dataset.sp}%</span>`;
+      + `<b>${human(+seg.dataset.sv)}</b><span class="sm"> · ${seg.dataset.sp}%</span>`;
     placeTip(seg);
     return;
   }
   const cell = e.target.closest('.cal i');
   if (!cell) return;
-  const unit = state.view === 'weekly' ? '次调用（整周）' : '次调用';
+  const unit = state.view === 'weekly' ? 'calls (whole week)' : 'calls';
   // 累计视图 hover 显示截至当日的累计值（格子着色仍是当日增量）
   const cum = state.view === 'cumulative' && cell.dataset.cum
-    ? ` · 累计 <b>${human(+cell.dataset.cum)}</b>` : '';
+    ? ` · cumulative <b>${human(+cell.dataset.cum)}</b>` : '';
   // token 用 K/M/B，调用次数保持整数——次数本来就是个位数量级的计数
   tip.innerHTML = cell.dataset.v
-    ? `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br>增量 <b>${human(+cell.dataset.i)}</b>${cum}`
-      + `<br><span class="sm">缓存读 ${human(+cell.dataset.c)} · ${fmt(+cell.dataset.m)} ${unit}</span>`
-    : `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br><span class="sm">无活动${cum}</span>`;
+    ? `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br>incr <b>${human(+cell.dataset.i)}</b>${cum}`
+      + `<br><span class="sm">cache read ${human(+cell.dataset.c)} · ${fmt(+cell.dataset.m)} ${unit}</span>`
+    : `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br><span class="sm">no activity${cum}</span>`;
 
   // 每周模式下整列同属一周，一起高亮才看得出 hover 的是哪一周
   clearColumn();
@@ -847,7 +905,8 @@ document.addEventListener('mouseover', e => {
   placeTip(cell);
 });
 document.addEventListener('mouseout', e => {
-  if (!e.target.closest('.cal i') && !e.target.closest('.stack span')) return;
+  if (!e.target.closest('.cal i') && !e.target.closest('.stack span')
+      && !e.target.closest('.mbar') && !e.target.closest('.pie-wrap')) return;
   tip.style.opacity = 0;
   clearColumn();
 });
@@ -903,14 +962,14 @@ renderAll();
 /* ---------- 口径说明 ---------- */
 const info = document.getElementById('info');
 info.innerHTML = `
-  <div><b>口径</b>：增量 token = 非缓存输入 + 输出 + 缓存写入。cache_read 单列不参与着色——它占总量九成以上，混入会让图形只反映会话长度。</div>
-  <div><b>跨工具对齐</b>：Grok 的 <code>inputTokens</code> 含缓存读、Claude 的 <code>input_tokens</code> 不含，采集时已减掉。</div>
-  <div><b>去重</b>：Claude 按 <code>message.id</code>（流式重复多），Grok 按 <code>session+prompt_id+模型</code>（天然无重复）。</div>
-  <div><b>时区</b>：Claude 的 UTC 串与 Grok 的 unix 秒都已转本机时区。</div>
-  <div><b>费用</b>：只有 Grok 记 <code>costUsdTicks</code>，按 1e-9 USD 推定且是订阅下的名义值，不等于实际扣费。</div>
-  <div><b>行尾额度区</b>：账号套餐的 5 小时窗与每周窗已用量，每 3 分钟轮询一次，与时间窗口无关。Kimi / MiniMax 各自独立查询；Grok 走未公开的 CLI billing 接口（与 /usage 同源，仅周额度）。查询失败时显示上一次成功的数据。</div>
-  <div><b>累计视图</b>：格子仍按当日增量着色（累计值单调递增，着色没有信息量），悬停格子看截至当日的累计值。</div>
-  <div><b>刷新</b>：每 60 秒自动同步，只读本地会话记录，不消耗 token。</div>`;
+  <div><b>Caliber</b>: incremental tokens = non-cached input + output + cache write. cache_read is listed separately and not used for coloring — it's over 90% of the total and would make the chart only reflect session length.</div>
+  <div><b>Cross-tool alignment</b>: Grok's <code>inputTokens</code> includes cache reads, Claude's <code>input_tokens</code> doesn't; this is subtracted at collection time.</div>
+  <div><b>Dedup</b>: Claude by <code>message.id</code> (streaming writes repeat), Grok by <code>session+prompt_id+model</code> (naturally unique).</div>
+  <div><b>Timezone</b>: Claude's UTC strings and Grok's unix seconds are both converted to local time.</div>
+  <div><b>Cost</b>: only Grok records <code>costUsdTicks</code>, estimated at 1e-9 USD and nominal under a subscription — not actual billing.</div>
+  <div><b>Row-end quota area</b>: the plan's 5-hour and weekly window usage, polled every 3 min, independent of the time window. Kimi / MiniMax are queried separately; Grok uses the undocumented CLI billing interface (same source as /usage, weekly quota only). On failure the last successful data is shown.</div>
+  <div><b>Cumulative view</b>: cells are still colored by that day's increment (cumulative is monotonic, coloring carries no information); hover a cell for the cumulative value up to that day.</div>
+  <div><b>Refresh</b>: auto-syncs every 60s, reads only local session logs, consumes no tokens.</div>`;
 const infoBtn = document.getElementById('info-btn');
 infoBtn.addEventListener('click', () => { info.hidden = !info.hidden; });
 document.addEventListener('click', e => {
@@ -944,7 +1003,7 @@ async function autoSync() {
 function tickSync() {
   const sec = Math.round((Date.now() - lastSync) / 1000);
   document.getElementById('sync').innerHTML =
-    sec < 90 ? `数据 <b>${sec}</b> 秒前` : `数据 <b>${Math.round(sec / 60)}</b> 分钟前`;
+    sec < 90 ? `updated <b>${sec}</b>s ago` : `updated <b>${Math.round(sec / 60)}</b>m ago`;
 }
 setInterval(autoSync, 60000);
 setInterval(tickSync, 1000);
@@ -964,7 +1023,7 @@ function flash(cls, text, ms) {
   clearTimeout(resetTimer);
   resetTimer = setTimeout(() => {
     btn.classList.remove('ok', 'warn');
-    btnText.textContent = '刷新';
+    btnText.textContent = 'Refresh';
   }, ms);
 }
 
@@ -974,7 +1033,7 @@ async function doRefresh() {
   btn.disabled = true;
   btn.classList.add('spin');
   btn.classList.remove('ok', 'warn');
-  btnText.textContent = '扫描中';
+  btnText.textContent = 'Scanning';
   try {
     // force=1 让服务端立刻重扫，不等下一个定时周期
     const res = await fetch('/api/data?force=1', { cache: 'no-store' });
@@ -982,10 +1041,10 @@ async function doRefresh() {
     applyData(await res.json());
     renderAll();
     lastSync = Date.now();
-    flash('ok', '已更新', 2000);
+    flash('ok', 'Updated', 2000);
   } catch (err) {
     info.hidden = false;
-    flash('warn', '需服务', 3600);
+    flash('warn', 'Need server', 3600);
   } finally {
     busy = false;
     btn.disabled = false;
