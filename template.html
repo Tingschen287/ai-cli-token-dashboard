@@ -128,9 +128,16 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 }
 .panel-head h2 { font-family: var(--serif); font-size: 16px; font-weight: 500; margin: 0; letter-spacing: 0; }
 .panel-head .note { color: var(--muted); font-size: 11px; }
-/* 合计从卡片挪到两个分段控件中间：作为窗口总量的常驻锚点 */
-.head-total { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.head-total b { color: var(--text); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+/* 合计卡：像 Daily/Weekly 那种带底色圆角的小块。
+   两行布局——主数字大字在上、副三项小字在下，纵向叠比横排窄很多，给右侧分段控件留空间。
+   统计窗口（如 2026-08-19）移到整卡 hover，默认不占视觉位。 */
+.metrics { display: inline-flex; align-items: baseline; gap: 8px;
+  background: var(--faint); border-radius: 8px; padding: 4px 10px;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metrics .big { color: var(--text); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.metrics .big .lab { color: var(--muted); font-size: 10.5px; font-weight: 500; margin-left: 2px; }
+.metrics .sub { color: var(--muted); font-size: 10.5px; }
+.metrics .sub b { color: var(--text); font-weight: 600; font-size: 11px; }
 
 /* ---------- 左：日历 ---------- */
 .cal-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -225,7 +232,7 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .mrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; flex: none; }
 .mrow.no-logo { grid-template-columns: 1fr auto; }
 .mrow .mlogo { width: 15px; height: 15px; display: block; }
-.mtrack { display: flex; align-items: center; min-width: 0; }
+.mtrack { display: flex; align-items: center; min-width: 0; position: relative; }
 .mbar { height: 20px; border-radius: 6px; display: flex; align-items: center;
         padding: 0 8px; box-sizing: border-box; min-width: 2px; flex: none; }
 .mbar span { color: #fff; font-size: 11px; font-weight: 500; line-height: 1;
@@ -233,6 +240,15 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .mbar:hover { filter: brightness(1.08); }
 .mname-out { font-size: 11.5px; color: var(--text); margin-left: 7px;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 按项目用分段堆叠条恢复各模型分布：条长 = 占榜首比例，段长 = 该来源在此项中的占比。
+   名字浮层绝对定位在条上居左，条太短时改放条外。条高 20px 与按模型齐平。 */
+.mtrack .stack { grid-column: auto; height: 20px; border-radius: 6px;
+                 flex: none; min-width: 2px; }
+.mtrack .stack span { min-width: 0; }
+.mname-in  { position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+             color: #fff; font-size: 11px; font-weight: 500; line-height: 1;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+             pointer-events: none; }
 
 /* 排行面板头部的 列表/占比 切换：复用 .seg 样式，只做小号版 */
 .rank-toggle { padding: 1px; }
@@ -313,7 +329,7 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
           <button data-view="cumulative" aria-pressed="false">Cumulative</button>
         </div>
         <span class="note" id="scale-note"></span>
-        <span class="head-total" id="head-total"></span>
+        <div class="metrics" id="metrics" title=""></div>
         <div class="seg" id="range-seg">
           <button data-weeks="13" aria-pressed="false">3 mo</button>
           <button data-weeks="26" aria-pressed="true">6 mo</button>
@@ -416,6 +432,13 @@ function human(n) {
   }
   return String(Math.round(n));
 }
+// 紧凑数字（副指标用）：无小数，只够一眼看量级。比 human 短 1-2 字符，挤宽度用。
+const hc = n => {
+  for (const [div, suffix] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) {
+    if (n >= div) return Math.round(n / div) + suffix;
+  }
+  return String(Math.round(n));
+};
 const iso = d => {
   const t = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
   return t.toISOString().slice(0, 10);
@@ -589,10 +612,26 @@ function renderMeta() {
 
   const totalIncr = PROFILES.reduce((s, p) => s + acc[p.key].incr, 0);
   const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);
-  // 去重条数和扫描耗时属于全期扫描信息，与窗口无关，收进 title
-  const headTotal = document.getElementById('head-total');
-  headTotal.innerHTML = `total <b>${human(totalIncr)}</b> · ${win.label}`;
-  headTotal.title = `${fmt(totalIncr)} tokens · lifetime deduped ${fmt(totalDup)} · scan ${DATA.scan ? DATA.scan.seconds : '?'}s`;
+  const totalRead = PROFILES.reduce((s, p) => s + acc[p.key].cache_read, 0);
+  const totalInput = PROFILES.reduce((s, p) => s + acc[p.key].input, 0);
+  const totalMsgs = PROFILES.reduce((s, p) => s + acc[p.key].msgs, 0);
+  // 缓存命中率 = cache_read / (cache_read + 非缓存输入)；无输入流量时留空
+  const denom = totalRead + totalInput;
+  const hit = denom > 0 ? (totalRead / denom * 100).toFixed(0) + '%' : '—';
+  // 次数单位：calls；数字大了用 K
+  const calls = totalMsgs >= 1000 ? (totalMsgs / 1000).toFixed(1) + 'K' : fmt(totalMsgs);
+  // 合计卡：只留总 token + 调用次数两项，缓存量和命中率塞进 hover（自定义 tooltip）
+  const metrics = document.getElementById('metrics');
+  metrics.innerHTML =
+    `<span class="big">${human(totalIncr)}<span class="lab">total</span></span>`
+    + `<span class="sub"><b>${calls}</b> calls</span>`;
+  // hover 数据：缓存读、命中率、统计窗口、精确值——供 mouseover 的 .metrics 分支用
+  metrics.dataset.read = totalRead;
+  metrics.dataset.hit = hit;
+  metrics.dataset.win = win.label;
+  metrics.dataset.ti = fmt(totalIncr);
+  metrics.dataset.tr = fmt(totalRead);
+  metrics.dataset.tm = fmt(totalMsgs);
 }
 
 /* ---------- 左：日历 ----------
@@ -757,30 +796,50 @@ function renderRank(id, rows, nameKey) {
   const max = list[0].total;
   const label = Object.fromEntries(PROFILES.map(p => [p.key, p.label]));
 
-  // 排行宽带样式（按模型/按项目共用）：条内放得下名字就白字放条内（居左），
-  // 条太短时名字放条外右侧用普通文字色，避免短条把名字截成省略号。
-  // 条色取该项里占比最大来源的品牌色；模型面板额外在条前放 logo。
+  // 排行宽带样式：条内放得下名字就白字放条内（居左），条太短时放条外。
+  // 按模型：单色条（取该模型品牌色）+ 条前 logo；按项目：分段堆叠条，恢复各来源分布，
+  // 段长 = 该来源在此项里的占比、段色 = 来源品牌色。两种面板条高一致、名字规则一致。
   {
     const trackPx = 420; // 轨道近似宽度，用于估算名字放不放得下；差一点无碍，只是内/外之别
     const totalAll = list.reduce((s, x) => s + x.total, 0);
     box.innerHTML = list.map(g => {
       const dom = PROFILES.reduce((best, p) =>
         (g.parts[p.key] || 0) > (g.parts[best.key] || 0) ? p : best, PROFILES[0]).key;
-      const bg = id === 'models' ? modelColor(dom, g.name) : COLORS[dom];
       const w = g.total / max * 100;
       const needPx = g.name.length * 6.6 + 18; // 名字宽度 + 内边距
       const inside = (w / 100 * trackPx) >= needPx;
-      const logo = id === 'models' ? modelLogo(dom, g.name) : '';
-      return `
-      <div class="mrow${id === 'models' ? '' : ' no-logo'}">
-        ${logo}
-        <div class="mtrack">
-          <div class="mbar" style="width:${w.toFixed(1)}%;background:${bg}"
-               data-sn="${g.name}" data-sv="${g.total}"
-               data-sp="${(g.total / totalAll * 100).toFixed(0)}">
-            ${inside ? `<span>${g.name}</span>` : ''}
+      if (id === 'models') {
+        const bg = modelColor(dom, g.name);
+        const logo = modelLogo(dom, g.name);
+        return `
+        <div class="mrow">
+          ${logo}
+          <div class="mtrack">
+            <div class="mbar" style="width:${w.toFixed(1)}%;background:${bg}"
+                 data-sn="${g.name}" data-sv="${g.total}"
+                 data-sp="${(g.total / totalAll * 100).toFixed(0)}">
+              ${inside ? `<span>${g.name}</span>` : ''}
+            </div>
+            ${inside ? '' : `<span class="mname-out">${g.name}</span>`}
           </div>
-          ${inside ? '' : `<span class="mname-out">${g.name}</span>`}
+          <div class="rank-val">${human(g.total)}</div>
+        </div>`;
+      }
+      // 按项目：分段堆叠，段长按该来源在此项中的占比，段色用来源品牌色
+      const parts = PROFILES.map(p => ({
+        key: p.key, label: p.label,
+        v: g.parts[p.key] || 0,
+        c: g.total ? (g.parts[p.key] || 0) / g.total * 100 : 0,
+      })).filter(p => p.v > 0);
+      const segs = parts.map(p => `
+        <span style="width:${p.c.toFixed(2)}%;background:${COLORS[p.key]}"
+              data-sn="${g.name}" data-seg="${p.label}"
+              data-sv="${p.v}" data-sp="${(p.v / totalAll * 100).toFixed(0)}"></span>`).join('');
+      return `
+      <div class="mrow no-logo">
+        <div class="mtrack">
+          <div class="stack" style="width:${w.toFixed(1)}%">${segs}</div>
+          ${inside ? `<span class="mname-in">${g.name}</span>` : `<span class="mname-out">${g.name}</span>`}
         </div>
         <div class="rank-val">${human(g.total)}</div>
       </div>`;
@@ -859,6 +918,15 @@ function placeTip(anchor) {
 }
 
 document.addEventListener('mouseover', e => {
+  // 顶部合计卡：显示统计窗口、缓存读、命中率（总 token 和次数已在卡片显示，不重复）
+  const mc = e.target.closest('#metrics');
+  if (mc) {
+    tip.innerHTML = `<b>${mc.dataset.win}</b>`
+      + `<br>cache read <b>${human(+mc.dataset.read)}</b>`
+      + `<br>hit rate <b>${mc.dataset.hit}</b>`;
+    placeTip(mc);
+    return;
+  }
   // 占比饼图的扇区：显示这个名字的总量和占比
   const arc = e.target.closest('.pie-wrap path, .pie-wrap circle');
   if (arc) {
@@ -905,7 +973,7 @@ document.addEventListener('mouseover', e => {
   placeTip(cell);
 });
 document.addEventListener('mouseout', e => {
-  if (!e.target.closest('.cal i') && !e.target.closest('.stack span')
+  if (!e.target.closest('#metrics') && !e.target.closest('.cal i') && !e.target.closest('.stack span')
       && !e.target.closest('.mbar') && !e.target.closest('.pie-wrap')) return;
   tip.style.opacity = 0;
   clearColumn();
