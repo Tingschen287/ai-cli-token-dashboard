@@ -6,7 +6,7 @@
 /api/data（见 QuotaPoller 一节）；这是唯一的联网行为，失败自动沿用旧数据。
 
 支持两种记录格式：
-  claude  <config_dir>/projects/<项目>/<会话>.jsonl
+  claude  <config_dir>/projects/<项目>/<会话>.jsonl 及其 subagents/ 子目录
           每行 assistant 消息带 message.usage
   grok    <config_dir>/sessions/<urlencode(cwd)>/<会话>/updates.jsonl
           turn_completed 事件带 params.update.usage
@@ -164,7 +164,11 @@ def parse_grok_file(path):
 
 
 FORMATS = {
-    "claude": (parse_claude_file, "projects/*/*.jsonl"),
+    # 主会话在 projects/<项目>/<会话>.jsonl（2 层），subagent 在
+    # projects/<项目>/<会话>/subagents/agent-*.jsonl（4 层）。用 ** 递归把两层都
+    # 收进来，否则 subagent 的用量会整体漏掉。subagent 的 message.id 与主会话
+    # 不重叠（已验证），靠既有跨文件去重即可，不会重复计数。
+    "claude": (parse_claude_file, "projects/**/*.jsonl"),
     "grok":   (parse_grok_file,   "sessions/*/*/updates.jsonl"),
 }
 
