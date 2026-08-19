@@ -747,8 +747,7 @@ function renderCalendar() {
     </div>
     <div class="cal-stack" style="--cell:${cell}px;--gap:${GAP}px">${rows}</div>`;
 
-  document.getElementById('scale-note').textContent =
-    weekly ? 'one column = one week' : cumulative ? 'hover a cell for cumulative' : '';
+  document.getElementById('scale-note').textContent = '';
 }
 
 /* ---------- 右：排行 ----------
