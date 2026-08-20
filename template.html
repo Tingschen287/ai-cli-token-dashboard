@@ -240,7 +240,7 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .mbar:hover { filter: brightness(1.08); }
 .mname-out { font-size: 11.5px; color: var(--text); margin-left: 7px;
              white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* 按项目用分段堆叠条恢复各模型分布：条长 = 占榜首比例，段长 = 该来源在此项中的占比。
+/* 按项目用分段堆叠条恢复各模型分布：条长 = 占榜首比例，段长 = 该模型在此项中的占比。
    名字浮层绝对定位在条上居左，条太短时改放条外。条高 20px 与按模型齐平。 */
 .mtrack .stack { grid-column: auto; height: 20px; border-radius: 6px;
                  flex: none; min-width: 2px; }
@@ -255,21 +255,11 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .rank-toggle button { font-size: 10.5px; padding: 2px 8px; }
 
 /* ---------- 占比饼图 ---------- */
-/* 图例在上(行多可滚),饼图固定在下居中 */
-.pie-wrap { display: flex; flex-direction: column; align-items: center; gap: 10px;
+/* 单个大饼居中：名字直标在扇区里，具体占比看 hover，不再要图例 */
+.pie-wrap { display: flex; align-items: center; justify-content: center;
             min-height: 0; flex: 1; }
 .pie-wrap svg { flex: none; display: block; }
-.pie-legend { width: 100%; min-height: 0; display: flex; flex-direction: column; gap: 6px;
-              overflow-y: auto; overflow-x: hidden; padding-right: 4px;
-              scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
-.pie-legend::-webkit-scrollbar { width: 6px; }
-.pie-legend::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.pie-row { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 8px;
-           align-items: center; flex: none; font-size: 11.5px; }
-.pie-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; }
-.pie-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pie-val { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pie-label { fill: #fff; font-size: 11px; font-weight: 600; text-anchor: middle;
+.pie-label { fill: #fff; font-size: 12px; font-weight: 600; text-anchor: middle;
              dominant-baseline: central; pointer-events: none; }
 .pie-wrap path:hover, .pie-wrap circle:hover { filter: brightness(1.12); }
 
@@ -392,6 +382,10 @@ function modelColor(profile, model) {
   if (m === 'k3' || m.startsWith('kimi') || m.startsWith('moonshot')) return MODEL_COLORS.kimi;
   return COLORS[profile];
 }
+/* 排行面板的大块填充（条 / 堆叠段 / 饼图扇区）不用满饱和原色：向面板底色混 15%，
+   色相不动但硬度降下来，和细线低阴影的整体质感一致；混的是 var(--panel)，
+   明暗两个主题各自适配。logo 等小面积点缀仍用原色，保证辨识度。 */
+const soft = c => `color-mix(in srgb, ${c} 85%, var(--panel))`;
 /* 各平台官方 logo（内联 base64，日历行标题用） */
 const LOGOS = {
   cco: 'data:image/svg+xml;base64,PHN2ZyBmaWxsPSIjRDk3NzU3IiByb2xlPSJpbWciIHZpZXdCb3g9IjAgMCAyNCAyNCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48dGl0bGU+Q2xhdWRlPC90aXRsZT48cGF0aCBkPSJtNC43MTQ0IDE1Ljk1NTUgNC43MTc0LTIuNjQ3MS4wNzktLjIzMDctLjA3OS0uMTI3NWgtLjIzMDdsLS43ODkzLS4wNDg2LTIuNjk1Ni0uMDcyOS0yLjMzNzUtLjA5NzEtMi4yNjQ2LS4xMjE0LS41NzA3LS4xMjE1LS41MzQzLS43MDQyLjA1NDYtLjM1MjIuNDc5Ny0uMzIxOC42ODYuMDYwOCAxLjUxNzkuMTAzMiAyLjI3NjcuMTU3OCAxLjY1MTQuMDk3MiAyLjQ0NjguMjU1aC4zODg2bC4wNTQ2LS4xNTc5LS4xMzM2LS4wOTcxLS4xMDMyLS4wOTcyTDYuOTczIDkuODM1NmwtMi41NS0xLjY4NzktMS4zMzU2LS45NzE0LS43MjI1LS40OTE4LS4zNjQzLS40NjE0LS4xNTc4LTEuMDA3OC42NTU3LS43MjI1Ljg4MDMuMDYwNy4yMjQ2LjA2MDcuODkyNS42ODYgMS45MDY0IDEuNDc1NCAyLjQ4OTMgMS44MzM2LjM2NDMuMzAzNS4xNDU3LS4xMDMyLjAxODItLjA3MjgtLjE2NC0uMjczMy0xLjM1MzktMi40NDY3LTEuNDQ1LTIuNDg5My0uNjQzNS0xLjAzMi0uMTctLjYxOTRjLS4wNjA3LS4yNTUtLjEwMzItLjQ2NzQtLjEwMzItLjcyODVMNi4yODcuMTMzNSA2LjY5OTcgMGwuOTk1Ny4xMzM2LjQxOS4zNjQyLjYxOTIgMS40MTQ3IDEuMDAxOCAyLjIyODIgMS41NTQzIDMuMDI5Ni40NTUzLjg5ODUuMjQyOS44MzE4LjA5MS4yNTVoLjE1Nzl2LS4xNDU3bC4xMjc1LTEuNzA2LjIzNjgtMi4wOTQ3LjIzMDctMi42OTU3LjA3ODktLjc1ODkuMzc2NC0uOTEwNy43NDY4LS40OTE4LjU4MjguMjc5My40Nzk3LjY4Ni0uMDY2OC40NDMzLS4yODUzIDEuODUxNy0uNTU4NiAyLjkwMjEtLjM2NDMgMS45NDI5aC4yMTI1bC4yNDI5LS4yNDI5Ljk4MzUtMS4zMDUzIDEuNjUxNC0yLjA2NDMuNzI4Ni0uODE5Ni44NS0uOTA0Ni41NDY0LS40MzExaDEuMDMyMWwuNzU5IDEuMTI5My0uMzQgMS4xNjU3LTEuMDYyNSAxLjM0NzgtLjg4MDQgMS4xNDE0LTEuMjYyOCAxLjctLjc4OTMgMS4zNi4wNzI5LjEwOTMuMTg4Mi0uMDE4MyAyLjg1MzUtLjYwNyAxLjU0MjEtLjI3OTQgMS44Mzk2LS4zMTU3LjgzMTguMzg4Ni4wOTEuMzk0Ni0uMzI3OC44MDc1LTEuOTY3LjQ4NTctMi4zMDcyLjQ2MTQtMy40MzY0LjgxMzYtLjA0MjUuMDMwNC4wNDg2LjA2MDcgMS41NDgyLjE0NTcuNjYxOC4wMzY0aDEuNjIxbDMuMDE3NS4yMjQ3Ljc4OTIuNTIyLjQ3MzYuNjM3Ni0uMDc5LjQ4NTctMS4yMTQyLjYxOTMtMS42MzkzLS4zODg2LTMuODI1LS45MTA3LTEuMzExMy0uMzI3OWgtLjE4MjJ2LjEwOTNsMS4wOTI5IDEuMDY4NiAyLjAwMzUgMS44MDkyIDIuNTA3NSAyLjMzMTQuMTI3NS41NzY4LS4zMjE4LjQ1NTQtLjM0LS4wNDg2LTIuMjAzOS0xLjY1NzUtLjg1LS43NDY4LTEuOTI0Ni0xLjYyMWgtLjEyNzV2LjE3bC40NDMyLjY0OTYgMi4zNDM2IDMuNTIxNC4xMjE0IDEuMDgwNy0uMTcuMzUyMS0uNjA3MS4yMTI1LS42Njc5LS4xMjE0LTEuMzcyMS0xLjkyNDZMMTQuMzggMTcuOTU5bC0xLjE0MTQtMS45NDI4LS4xMzk3LjA3OS0uNjc0IDcuMjU1Mi0uMzE1Ni4zNzAzLS43Mjg2LjI3OTMtLjYwNzEtLjQ2MTQtLjMyMTgtLjc0NjguMzIxOC0xLjQ3NTMuMzg4Ni0xLjkyNDYuMzE1Ny0xLjUzLjI4NTMtMS45MDA0LjE3LS42MzE0LS4wMTIxLS4wNDI1LS4xMzk3LjAxODItMS40MzI4IDEuOTY3Mi0yLjE3OTYgMi45NDQ2LTEuNzI0MyAxLjg0NTYtLjQxMjguMTY0LS43MTY0LS4zNzA0LjA2NjctLjY2MTguNDAwOC0uNTg4OSAyLjM4Ni0zLjAzNTcgMS40Mzg5LTEuODgyLjkyOS0xLjA4NjgtLjAwNjItLjE1NzloLS4wNTQ2bC02LjMzODUgNC4xMTY0LTEuMTI5My4xNDU3LS40ODU3LS40NTU0LjA2MDgtLjc0NjcuMjMwNy0uMjQyOSAxLjkwNjQtMS4zMTE0WiIvPjwvc3ZnPg==',
@@ -775,15 +769,19 @@ function renderRank(id, rows, nameKey) {
   const win = activeWindow();
   document.getElementById(id + '-scope').textContent = win.label;
 
-  // 按名字分组，组内再按来源拆开——同一个项目常常横跨多个渠道，
-  // 分开列成多行就看不出这个项目总共烧了多少
+  // 按名字分组，组内再按段拆开——同一个项目常常横跨多个渠道/模型，
+  // 分开列成多行就看不出这个项目总共烧了多少。
+  // 段的粒度两个面板不同：按模型的段 = 来源（取主来源的品牌色和 logo），
+  // 按项目的段 = 模型（段色与按模型排行同源）；profiles 记录每个段来自哪个来源
   const groups = new Map();
   for (const r of rows) {
     if (r.incr <= 0 || !win.test(r.date)) continue;
     let g = groups.get(r[nameKey]);
-    if (!g) groups.set(r[nameKey], g = { name: r[nameKey], total: 0, parts: {} });
+    if (!g) groups.set(r[nameKey], g = { name: r[nameKey], total: 0, parts: {}, profiles: {} });
     g.total += r.incr;
-    g.parts[r.profile] = (g.parts[r.profile] || 0) + r.incr;
+    const pk = id === 'projects' ? r.model : r.profile;
+    g.parts[pk] = (g.parts[pk] || 0) + r.incr;
+    g.profiles[pk] = r.profile;
   }
   const list = [...groups.values()].sort((a, b) => b.total - a.total);
 
@@ -793,11 +791,10 @@ function renderRank(id, rows, nameKey) {
   }
   if (rankMode[id] === 'pie') return renderPie(box, id, list);
   const max = list[0].total;
-  const label = Object.fromEntries(PROFILES.map(p => [p.key, p.label]));
 
   // 排行宽带样式：条内放得下名字就白字放条内（居左），条太短时放条外。
-  // 按模型：单色条（取该模型品牌色）+ 条前 logo；按项目：分段堆叠条，恢复各来源分布，
-  // 段长 = 该来源在此项里的占比、段色 = 来源品牌色。两种面板条高一致、名字规则一致。
+  // 按模型：单色条（取该模型品牌色）+ 条前 logo；按项目：分段堆叠条，恢复各模型分布，
+  // 段长 = 该模型在此项里的占比、段色与按模型排行同源。两种面板条高一致、名字规则一致。
   {
     const trackPx = 420; // 轨道近似宽度，用于估算名字放不放得下；差一点无碍，只是内/外之别
     const totalAll = list.reduce((s, x) => s + x.total, 0);
@@ -814,7 +811,7 @@ function renderRank(id, rows, nameKey) {
         <div class="mrow">
           ${logo}
           <div class="mtrack">
-            <div class="mbar" style="width:${w.toFixed(1)}%;background:${bg}"
+            <div class="mbar" style="width:${w.toFixed(1)}%;background:${soft(bg)}"
                  data-sn="${g.name}" data-sv="${g.total}"
                  data-sp="${(g.total / totalAll * 100).toFixed(0)}">
               ${inside ? `<span>${g.name}</span>` : ''}
@@ -824,15 +821,16 @@ function renderRank(id, rows, nameKey) {
           <div class="rank-val">${human(g.total)}</div>
         </div>`;
       }
-      // 按项目：分段堆叠，段长按该来源在此项中的占比，段色用来源品牌色
-      const parts = PROFILES.map(p => ({
-        key: p.key, label: p.label,
-        v: g.parts[p.key] || 0,
-        c: g.total ? (g.parts[p.key] || 0) / g.total * 100 : 0,
-      })).filter(p => p.v > 0);
+      // 按项目：分段堆叠，段 = 模型，段长按该模型在此项目中的占比，
+      // 段色与按模型排行同源（modelColor）
+      const parts = Object.entries(g.parts)
+        .map(([m, v]) => ({ model: m, v, c: v / g.total * 100,
+                            color: modelColor(g.profiles[m], m) }))
+        .filter(p => p.v > 0)
+        .sort((a, b) => b.v - a.v);
       const segs = parts.map(p => `
-        <span style="width:${p.c.toFixed(2)}%;background:${COLORS[p.key]}"
-              data-sn="${g.name}" data-seg="${p.label}"
+        <span style="width:${p.c.toFixed(2)}%;background:${soft(p.color)}"
+              data-sn="${g.name}" data-seg="${p.model}"
               data-sv="${p.v}" data-sp="${(p.v / totalAll * 100).toFixed(0)}"></span>`).join('');
       return `
       <div class="mrow no-logo">
@@ -848,17 +846,23 @@ function renderRank(id, rows, nameKey) {
 }
 
 /* 占比饼图：实心扇区，每块直接标百分比；图例给名字和用量。
-   颜色沿用堆叠条的规则——取该名字里占比最大的那段来源色，保证列表/占比两种看法同色系。 */
+   颜色沿用堆叠条的规则——按模型取主来源下该模型的品牌色，按项目取用量最大
+   模型段的品牌色，保证列表/占比两种看法同色系。 */
 function renderPie(box, id, list) {
   const total = list.reduce((s, g) => s + g.total, 0);
-  // 扇区颜色 = 这个名字里最大的一段来源色
+  // 扇区颜色 = 这个名字里最大的一段的颜色
   const colorOf = g => {
-    const p = PROFILES.reduce((best, p) =>
-      (g.parts[p.key] || 0) > (g.parts[best.key] || 0) ? p : best, PROFILES[0]);
-    return id === 'models' ? modelColor(p.key, g.name) : COLORS[p.key];
+    if (id === 'models') {
+      const p = PROFILES.reduce((best, p) =>
+        (g.parts[p.key] || 0) > (g.parts[best.key] || 0) ? p : best, PROFILES[0]);
+      return modelColor(p.key, g.name);
+    }
+    // 按项目：段 = 模型，取用量最大的模型段的品牌色
+    const m = Object.keys(g.parts).reduce((a, b) => g.parts[a] >= g.parts[b] ? a : b);
+    return modelColor(g.profiles[m], m);
   };
 
-  const CX = 60, CY = 60, R = 56;
+  const CX = 110, CY = 110, R = 104;
   const pt = (ang, r) => [CX + r * Math.cos(ang), CY + r * Math.sin(ang)];
   let acc = -Math.PI / 2; // 从正上方开始，顺时针
   let slices = '', labels = '';
@@ -866,7 +870,7 @@ function renderPie(box, id, list) {
     const frac = g.total / total;
     const a0 = acc, a1 = acc + frac * 2 * Math.PI;
     acc = a1;
-    const col = colorOf(g);
+    const col = soft(colorOf(g));
     if (frac >= 0.9999) {
       // 单一项目占满整圆时弧线首尾重合画不出来，直接画个整圆
       slices += `<circle cx="${CX}" cy="${CY}" r="${R}" fill="${col}"
@@ -879,26 +883,25 @@ function renderPie(box, id, list) {
         stroke="var(--panel)" stroke-width="1"
         data-sn="${g.name}" data-sv="${g.total}" data-sp="${(frac * 100).toFixed(1)}"/>`;
     }
-    // 太小的扇区标进去会叠成一团，交给图例；≥6% 的才把百分比标在扇区里
-    if (frac >= 0.06) {
-      const mid = (a0 + a1) / 2;
+    // 名字直接标在扇区里（占比看 hover）。扇区放不下全名时按可用宽度截断，
+    // 太小的扇区不标——可用宽度沿弧向和径向取加权和，朝侧向的窄扇区也能放短名。
+    const mid = (a0 + a1) / 2;
+    const arcW = frac * 2 * Math.PI * (R * 0.62);
+    const avail = arcW * Math.abs(Math.sin(mid)) + R * 0.55 * Math.abs(Math.cos(mid));
+    const maxChars = Math.floor(avail / 6.6);
+    if (maxChars >= 4) {
+      // 项目名区分度在结尾（infra-…-wiki-mcp），保留结尾；模型名保留开头
+      const keepTail = id !== 'models';
+      const name = g.name.length > maxChars
+        ? (keepTail ? '…' + g.name.slice(-(maxChars - 1)) : g.name.slice(0, maxChars - 1) + '…')
+        : g.name;
       const [lx, ly] = pt(mid, R * 0.62);
-      labels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" class="pie-label">${(frac * 100).toFixed(0)}%</text>`;
+      labels += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" class="pie-label">${name}</text>`;
     }
   }
 
-  const legend = list.map(g => {
-    const pct = (g.total / total * 100).toFixed(1);
-    return `<div class="pie-row">
-      <span class="pie-dot" style="background:${colorOf(g)}"></span>
-      <span class="pie-name" title="${g.name}">${g.name}</span>
-      <span class="pie-val">${pct}% · ${human(g.total)}</span>
-    </div>`;
-  }).join('');
-
   box.innerHTML = `<div class="pie-wrap">
-    <div class="pie-legend">${legend}</div>
-    <svg width="120" height="120" viewBox="0 0 120 120">${slices}${labels}</svg>
+    <svg width="220" height="220" viewBox="0 0 220 220">${slices}${labels}</svg>
   </div>`;
 }
 
@@ -942,7 +945,7 @@ document.addEventListener('mouseover', e => {
     placeTip(mbar);
     return;
   }
-  // 堆叠条的某一段：显示这个项目里该来源的具体用量
+  // 堆叠条的某一段：显示这个项目里该模型的具体用量
   const seg = e.target.closest('.stack span');
   if (seg) {
     tip.innerHTML = `<b>${seg.dataset.sn}</b><br>${seg.dataset.seg} `

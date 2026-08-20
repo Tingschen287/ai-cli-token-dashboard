@@ -272,9 +272,11 @@ def collect():
     started = time.time()
     daily = collections.defaultdict(blank)       # (date, profile)
     # 带 date 维度：右侧排行要按当前时间窗口（当天/当周/整个范围）重新聚合，
-    # 没有日期就只能给全时段总量。实测组合数不到 250 条，代价约 30KB。
+    # 没有日期就只能给全时段总量。组合数有限（几百条），代价几十 KB。
     models = collections.defaultdict(blank)      # (date, profile, model)
-    projects = collections.defaultdict(blank)    # (date, profile, project)
+    # 按项目面板的分段是模型（不是来源），所以 projects 也带 model 维度；
+    # profile 仍保留，前端取模型品牌色（modelColor）要用
+    projects = collections.defaultdict(blank)    # (date, profile, project, model)
     totals = collections.defaultdict(blank)      # profile
     meta = {}
     scanned = cached = 0
@@ -306,7 +308,7 @@ def collect():
                         continue  # 流式占位，没有实际计量
                     accumulate(daily[(row.date, key)], row)
                     accumulate(models[(row.date, key, row.model)], row)
-                    accumulate(projects[(row.date, key, row.project)], row)
+                    accumulate(projects[(row.date, key, row.project, row.model)], row)
                     accumulate(totals[key], row)
 
         meta[key] = {
@@ -338,8 +340,8 @@ def collect():
         # 前端按时间窗口过滤后自行聚合排序，这里只要顺序稳定
         "models": sorted(flatten(models, ("date", "profile", "model")),
                          key=lambda r: (r["date"], r["profile"], r["model"])),
-        "projects": sorted(flatten(projects, ("date", "profile", "project")),
-                           key=lambda r: (r["date"], r["profile"], r["project"])),
+        "projects": sorted(flatten(projects, ("date", "profile", "project", "model")),
+                           key=lambda r: (r["date"], r["profile"], r["project"], r["model"])),
     }
 
 
