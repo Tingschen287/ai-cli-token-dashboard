@@ -163,6 +163,60 @@ def parse_grok_file(path):
     return rows, raw
 
 
+def parse_kimi_file(path):
+    """Kimi Code CLI：wire.jsonl 里的 usage.record 事件。
+
+    每个 turn 一条 usage.record，是这次 LLM 调用的真实计量；紧随其后 step.end
+    事件里带的是同一份 usage，只取 usage.record 避免重复。inputOther 不含缓存读
+    （与 claude 口径一致：inputOther + inputCacheRead + output == 实测总 token，
+    已验证），所以增量 = inputOther + output + inputCacheCreation，cache_read 单列。
+
+    usage.record 没有 message.id，但每个 turn 一条、跨文件不重叠，不需要 dedup_key。
+    time 是 unix **毫秒**，要 /1000 才落得到正确日期。
+    """
+    rows, raw = [], 0
+    # 路径 sessions/<wd_>/session_<id>/agents/<agent>/wire.jsonl；workdir 名编在
+    # wd_<basename>_<hash16> 里，去掉尾部 hash 段即项目名
+    wd = next((p for p in path.parts if p.startswith("wd_")), "")
+    project = (wd[3:].rsplit("_", 1)[0] if wd else "") or "unknown"
+    try:
+        handle = path.open(errors="ignore")
+    except OSError:
+        return rows, raw
+    with handle:
+        for line in handle:
+            if '"usage.record"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("type") != "usage.record":
+                continue
+            usage = rec.get("usage")
+            if not isinstance(usage, dict):
+                continue
+            raw += 1
+            t = rec.get("time")
+            date = _local_date(t / 1000) if isinstance(t, (int, float)) else None
+            if not date:
+                continue
+            rows.append(Row(
+                dedup_key=None,
+                date=date,
+                model=rec.get("model") or "unknown",
+                project=project,
+                input=usage.get("inputOther") or 0,
+                output=usage.get("output") or 0,
+                cache_write=usage.get("inputCacheCreation") or 0,
+                cache_read=usage.get("inputCacheRead") or 0,
+                reasoning=0,
+                calls=1,
+                cost_ticks=0,
+            ))
+    return rows, raw
+
+
 FORMATS = {
     # 主会话在 projects/<项目>/<会话>.jsonl（2 层），subagent 在
     # projects/<项目>/<会话>/subagents/agent-*.jsonl（4 层）。用 ** 递归把两层都
@@ -170,6 +224,9 @@ FORMATS = {
     # 不重叠（已验证），靠既有跨文件去重即可，不会重复计数。
     "claude": (parse_claude_file, "projects/**/*.jsonl"),
     "grok":   (parse_grok_file,   "sessions/*/*/updates.jsonl"),
+    # kimi 尚未挂进 PROFILES（前端还没集成第四个来源），这里先注册解析器，
+    # 供缓存对比脚本直接调用；要上看板时在 PROFILES 加一项即可生效。
+    "kimi":   (parse_kimi_file,   "sessions/*/session_*/agents/*/wire.jsonl"),
 }
 
 # 文件级缓存：path -> (签名, rows, raw_count)
