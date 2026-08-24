@@ -27,20 +27,29 @@
 ## collect.py 内部结构
 
 - `PROFILES`（文件顶部）：扫描来源配置。key 是看板标识，`format` 决定解析器。增删来源改这里。
-- 解析器：`parse_claude_file`（`<dir>/projects/**/*.jsonl`，含 subagents 子目录）和
-  `parse_grok_file`（`<dir>/sessions/*/*/updates.jsonl`），两者都产出统一的 `Row`
-  namedtuple，下游聚合只认 `Row`。另有 `parse_kimi_file`（wire.jsonl 的
-  `usage.record`，time 是 unix 毫秒）已注册进 `FORMATS` 但未挂 `PROFILES`，
-  目前只供 `cache_compare.py` 复用。
+- 解析器：都产出统一的 `Row` namedtuple，下游聚合只认 `Row`。
+  `parse_claude_file`（`<dir>/projects/**/*.jsonl`，含 subagents 子目录）、
+  `parse_grok_file`（`<dir>/sessions/*/*/updates.jsonl`）、
+  `parse_kimi_file`（wire.jsonl 的 `usage.record`，time 是 unix 毫秒）、
+  `parse_codex_file`（rollout-*.jsonl 的 `token_count`，取 `last_token_usage`
+  增量；模型/cwd 在同文件 session_meta/turn_context 行）。
 - 文件级增量缓存 `_CACHE`：按 `(mtime_ns, size)` 签名判断，只重读变过的文件。
   会话记录 append-only，这是安全的。
 - `collect()`：聚合产出 `daily` / `models` / `projects`（都带 date 维度，供前端
   按时间窗口重新聚合；`projects` 还带 model 维度——按项目面板的分段是模型）和
-  `profiles` 总量。
+  `profiles` 总量。codex 的额度（rollout 文件自带的 `rate_limits`）在扫描时
+  顺手读最新文件尾部，挂进 `meta["codex"]["quota"]`，纯本地不联网。
 - 额度轮询（仅 `--serve` 模式联网）：`QuotaPoller` 后台线程每 180 秒轮询
-  cco（Anthropic OAuth `/api/oauth/usage`）、ccs（cc-switch 库里的 Kimi/MiniMax
+  cco（Anthropic OAuth `/api/oauth/usage`）、ccs（cc-switch 库里的 MiniMax
   供应商，读 `~/.cc-switch/cc-switch.db` 拿 token）、grok（CLI 内部 billing 接口，
   OIDC token 从 `~/.grok/auth.json` 复用/refresh）。单家失败沿用旧数据。
+  codex 不走这里（见上）。
+- kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
+  `https://api.kimi.com/coding/v1/usages` 接口（同一账号），认证用
+  `~/.kimi-code/credentials/kimi-code.json` 的 OAuth token。access_token 只有
+  15 分钟，基本每次都要 refresh（`POST https://auth.kimi.com/api/oauth/token`，
+  client_id 是 CLI 二进制内置的公共值）；**refresh_token 会轮换，refresh 后必须
+  先重读文件再合并写回（原子写、chmod 600）**，否则会顶掉 kimi CLI 的登录态。
 - `Snapshot`：后台线程按 `--interval`（默认 60s）定时重扫，`/api/data?force=1`
   立即重扫（页面刷新按钮）。
 - `serve()`：`http.server.ThreadingHTTPServer`，路由只有 `/api/data`、`/`、
@@ -51,9 +60,26 @@
 - `let DATA = /*__DATA__*/null;` —— `render()`/`serve()` 把聚合 JSON 替换进这个
   占位符；转义 `</` 防止提前闭合 script 块。
 - 刷新会整体换掉 `DATA`，所以派生结构在 `applyData()` 里重算，**不能做成顶层 const**。
-- 布局是一屏到底不滚动：格子尺寸同时受宽高约束取较小值；窄于 940px 退回单栏滚动。
-- 品牌色：`COLORS`（cco 橙 / ccs 紫 / grok 灰）、`MODEL_COLORS`、`LOGOS` 都在
-  script 顶部集中定义。
+- 布局是一屏到底不滚动：三行分组（`ROW_LAYOUT`：cco 独占整宽 / codex+grok /
+  ccs+kimi），一行 1~2 个槽位并排；**格子是固定 17px 正方形（`CELL` 常量），
+  绝不拉伸**，列数随槽位宽度能放几列放几列（主屏不设上限，遮罩受 weeks 约束）；
+  窄于 940px 退回单栏、槽位纵向堆叠。月份轴在每个槽位内部（标题之下），
+  按各自的列几何对齐，不是全局共享轴。
+  主屏 `state.weeks = 13` 只管右侧排行的统计窗口；半年/一年在 `#longview`
+  全屏遮罩里，用独立的 `lvState` 渲染——`renderCalendar(boxId, view, weeks)`、
+  `activeWindow(view, weeks)`、`windowTotals(view, weeks)` 都是参数化的，
+  主屏和遮罩各调各的，不要回退成读全局 state。
+- 每个来源的结构：标题 + 月份轴 + 格子 + 额度行。额度在格子下方一行排开、
+  **不换行**（用户明确要求保留这种方式）；没有色阶图例（用户明确不要）。
+- 品牌色：`COLORS`（cco 橙 / kimi 蓝 / codex 黑 / ccs 紫 / grok 灰）、`MODEL_COLORS`、
+  `LOGOS` 都在 script 顶部集中定义。模型 logo 与主题色对齐
+  artificialanalysis.ai 模型页：图片下载自 AA 站点 `/img/logos/`
+  （kimi.jpg / minimax_small.svg / zai_small.svg / openai_small.svg），
+  base64 内嵌（模型 logo 在 `MODEL_IMG`），
+  色值 Kimi `#047AFE` / MiniMax `#EB3568` / Z.ai `#1C7FF8` / OpenAI `#1F1F1F`
+  （codex 深色主题反为近白 `#E8E6E1`，纯黑会糊进底色）；
+  ccs 标题右侧只列当前可用模型（MiniMax + GLM，kimi 已迁出）。
+  kimi/codex 的行首 LOGOS 在 `MODEL_IMG` 之后运行时补入。
 - 服务模式检测：能 `fetch('/api/data')` 就是服务模式，否则刷新按钮降级为提示
   （复制命令到剪贴板），不报错。
 
@@ -75,20 +101,25 @@ feat/fix/style/refactor）。
 
 ## 必须遵守的口径与陷阱
 
-改动聚合逻辑前必读 README「口径」和「四个必须注意的处理」，核心点：
+改动聚合逻辑前必读 README「口径」和「必须注意的处理」，核心点：
 
 1. **主指标 = 增量 token** = 非缓存输入 + 输出 + 缓存写入。`cache_read` 单列，
    不参与着色（它占总量九成以上）。
-2. **跨工具口径对齐**：Grok 的 `inputTokens` **包含** `cachedReadTokens`，Claude 的
-   `input_tokens` 不包含——解析 grok 时必须减掉，否则虚高一个数量级。
+2. **跨工具口径对齐**：Grok 的 `inputTokens` **包含** `cachedReadTokens`，Codex 的
+   `input_tokens` **包含** `cached_input_tokens`，Claude 的不包含——解析 grok/codex
+   时必须减掉，否则虚高一个数量级。
 3. **去重方式不同**：Claude 按 `message.id`（流式中间态重复严重，且重复可跨文件，
-   所以去重放在 `collect()` 上层而非解析器内）；Grok 按 `session+prompt_id+模型`。
-4. **时间戳统一转本机时区**（`_local_date`）：Claude 是 UTC ISO 串，Grok 是 unix 秒。
-   不转的话本地晚上的会话被算到第二天，热力图错位。
+   所以去重放在 `collect()` 上层而非解析器内）；Grok 按 `session+prompt_id+模型`；
+   Kimi（每 turn 一条）和 Codex（每次调用一条）天然不重复。
+4. **时间戳统一转本机时区**（`_local_date`）：Claude / Codex 是 UTC ISO 串，Grok
+   是 unix 秒，Kimi 是 unix 毫秒（/1000）。不转的话本地晚上的会话被算到第二天，
+   热力图错位。
 5. usage 全为 0 的记录跳过（流式占位）。
 6. claude 的 glob 是 `projects/**/*.jsonl`（两层），**不能改成一层**——subagent
    会话在 `subagents/agent-*.jsonl`，漏掉会整体丢失这部分用量。
-7. 费用：只有 grok 记 `costUsdTicks`，按 1e-9 USD/tick 推定，是**名义**值。
+7. **Codex 取 `last_token_usage`（增量），不取 `total_token_usage`（会话累计）**，
+   否则重复计数。
+8. 费用：只有 grok 记 `costUsdTicks`，按 1e-9 USD/tick 推定，是**名义**值。
    这是消耗看板，不是账单看板。
 
 ## 安全与隐私
@@ -99,8 +130,9 @@ feat/fix/style/refactor）。
   确认没有不该外传的内容。`.gitignore` 里 `*.json` 也是同理（`--json` 导出物）。
 - 静态扫描完全离线；唯一联网行为是 `--serve` 模式的额度轮询（读各平台 token：
   `~/.claude-official/.credentials.json`、`~/.cc-switch/cc-switch.db`、
-  `~/.grok/auth.json`）。grok 的 OIDC refresh 会写回 `auth.json`（先重读合并、
-  chmod 600），修改这段逻辑时注意不要顶掉 grok CLI 自己的登录态。
+  `~/.grok/auth.json`、`~/.kimi-code/credentials/kimi-code.json`）。grok 和 kimi 的
+  refresh 都会写回各自凭证文件（先重读合并、chmod 600），修改这段逻辑时注意
+  不要顶掉 CLI 自己的登录态。
 - grok 额度走未公开的 CLI 内部 billing 接口，字段可能随时变化，解析必须容错。
 
 ## 部署

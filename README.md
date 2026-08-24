@@ -5,11 +5,13 @@
 
 一屏看完：日历热力图 + 按模型 / 按项目的用量排行，随时间窗口联动。
 
-目前覆盖三个来源，都可以在 `collect.py` 顶部的 `PROFILES` 里增删：
+目前覆盖五个来源，都可以在 `collect.py` 顶部的 `PROFILES` 里增删：
 
 | key | 看板显示名 | 默认目录 | 说明 |
 |---|---|---|---|
 | `cco` | Claude Official | `~/.claude-official` | Claude Code 官方账号 |
+| `kimi` | Kimi | `~/.kimi-code` | Kimi Code CLI 官方接入 |
+| `codex` | ChatGPT | `~/.codex` | Codex CLI |
 | `ccs` | CC-Switch | `~/.claude` | Claude Code 经 CC-Switch 走第三方 |
 | `grok` | Grok | `~/.grok` | Grok CLI |
 
@@ -99,8 +101,6 @@ Python，所以按钮必须有个后端替它去扫描。服务只绑 `127.0.0.1
 
 ## 记录格式
 
-看板在用的两种：
-
 **claude** —— `<dir>/projects/<项目>/<会话>.jsonl`
 每行一条 assistant 消息，用量在 `message.usage`。
 
@@ -108,14 +108,17 @@ Python，所以按钮必须有个后端替它去扫描。服务只绑 `127.0.0.1
 `turn_completed` 事件的 `params.update.usage`，一条 = 一次提问的整个 agent loop，
 还带 `modelUsage` 分模型拆分、`reasoningTokens` 和 `costUsdTicks`。
 
-另有一个已注册但没上看板的：
-
 **kimi** —— `<dir>/sessions/<wd_*>/session_*/agents/*/wire.jsonl` 的
-`usage.record` 事件（Kimi Code CLI），time 是 unix 毫秒。解析器在 `FORMATS` 里，
-但没挂进 `PROFILES`——要上看板时在 `PROFILES` 加一项即可。目前主要给
-`cache_compare.py` 复用：对比 K3 在 kimi code cli 官方接入与 claude code +
-cc-switch 转发下的 prompt 缓存命中率，`python3 cache_compare.py [--since 日期]`，
-同样只读本地记录、不联网。
+`usage.record` 事件（Kimi Code CLI），time 是 unix 毫秒。
+
+**codex** —— `<dir>/sessions/YYYY/MM/DD/rollout-*.jsonl` 的 `token_count` 事件，
+取 `info.last_token_usage`（每次 LLM 调用的增量；`total_token_usage` 是累计值不取）。
+模型和 cwd 在同文件的 session_meta / turn_context 行。事件里还自带 `rate_limits`
+（账号额度快照），codex 行的额度显示就从这里白捡，不联网。
+
+`cache_compare.py` 复用 kimi/claude 两个解析器：对比 K3 在 kimi code cli 官方接入与
+claude code + cc-switch 转发下的 prompt 缓存命中率，
+`python3 cache_compare.py [--since 日期]`，同样只读本地记录、不联网。
 
 ## 布局：一屏到底，不滚动
 
@@ -125,28 +128,33 @@ cc-switch 转发下的 prompt 缓存命中率，`python3 cache_compare.py [--sin
 ┌────────────────────────────────────────────────────┐
 │ Token 活动  增量 2.17亿 …      数据 12 秒前 [↻] [ⓘ] │
 ├─────────────────────────────────┬──────────────────┤
-│ [每日|每周|累计]     [3月6月1年] │ ┌──────┬───────┐ │
-│  5月    6月    7月    8月        │ │ cco  │ ccs   │ │
-│ ● cco   ░░░░░░░░░░▓█▓░░░░░      │ ├──────┼───────┤ │
-│ ● ccs   ░░░▓███▓░░░░░░░░░░      │ │ grok │ 合计  │ │
-│ ● grok  ░▓██▓░░░░░░░░░░░░░      │ └──────┴───────┘ │
-│ ●●●  少 ░▒▓█ 多                 │ 按模型           │
+│ [每日|每周|累计]    [6 mo/1 yr▸] │ ┌──────┬───────┐ │
+│  6月    7月    8月  │  6月 7月 8月│ │ cco  │ ccs   │ │
+│ ● cco    ░░░░░░▓█▓░             │ ├──────┼───────┤ │
+│ ● codex  ░▓███▓░  │ ● grok ░▓██░│ │ grok │ 合计  │ │
+│ ● ccs    ░░▓██▓░  │ ● kimi ░░░▓░│ └──────┴───────┘ │
+│                                 │ 按模型           │
 │                                 │ 按项目           │
 └─────────────────────────────────┴──────────────────┘
 ```
 
-**三行日历共享一条月份轴。** 它们时间轴本来就相同，合并后三个来源在同一天的格子
-严格垂直对齐——这样才能纵向比对「同一天我在哪个工具上花得多」。省空间只是副产品。
+**三行分组，一行 1~2 个来源。** cco 主力独占一行；codex + grok 次级工具一行；
+ccs + kimi 一行——k3 从 cc-switch 迁到 kimi cli，迁移前后并排正好对照。
 
-**自适应任意窗口尺寸。** 格子尺寸同时受宽高约束（横向要铺满列数，纵向三行必须塞进
-可用高度），取较小值。实测：
+**格子是固定 17px 的正方形，绝不拉伸；列数随槽位宽度能放几列放几列**
+（一列 = 一周）——独占整宽的 cco 行天然多放几列、多显示几周历史，
+双槽位行各半宽、列数少一些。月份轴在每个槽位内部、标题之下，按各自的
+列几何对齐。
 
-| 窗口 | 格子 |
-|---|---|
-| 2560×1440 | 25px |
-| 1920×1080 | 17px |
-| 1440×900 | 12px |
-| 1280×720 | 10px |
+**主屏固定 3 个月**（指右侧排行的统计窗口；日历格子本身按宽度尽量多显示）。
+半年 / 一年收进右上角的「6 mo / 1 yr ▸」全屏遮罩：点开后用整个屏幕渲染，
+Esc 或 ✕ 关掉。遮罩里有独立的视图和范围切换，不影响主屏状态。
+
+**每个来源：标题 + 月份轴 + 格子 + 额度行。** 额度在格子下方一行排开、不换行
+（窄屏截断不挤压格子），是账号实时状态，不随时间窗口变：
+cco / ccs / grok / kimi 走后端慢轮询（仅服务模式；kimi 用 CLI 的 OAuth 凭证访问
+官方 `/v1/usages`），codex 直接从会话文件里读。
+没有色阶图例——「越深越多」看格子本身就够直观。
 
 排行榜不按高度裁行数——放不下就滚动（裁掉的长尾根本看不到）。
 
@@ -161,9 +169,9 @@ cc-switch 转发下的 prompt 缓存命中率，`python3 cache_compare.py [--sin
 | 累计 | 折线（累计值单调递增，画成热力图会整片最深色） | 当前范围全部 |
 
 **右侧四张卡片和两张排行榜都跟随左侧的时间窗口**，卡片「合计」的副标题和面板标题
-都会显示当前统计的是哪一段（`2026-08-12` / `2026-08-09 起那周` / `近 1 年`）。
-范围按钮（3 个月 / 6 个月 / 1 年）同时限定数据池。所以「今天我在哪个项目烧得多」
-和「这一年总账」是同一个控件切出来的。
+都会显示当前统计的是哪一段（`2026-08-12` / `2026-08-09 起那周` / `近 3 个月`）。
+主屏数据池固定为近 3 个月；要看半年/一年点「6 mo / 1 yr ▸」进全屏遮罩。
+所以「今天我在哪个项目烧得多」和「这一年总账」是同一个控件切出来的。
 
 只有顶栏那行是**全期**总账，固定不动，作为切 tab 时的对照锚点。
 
@@ -179,8 +187,9 @@ cc-switch 转发下的 prompt 缓存命中率，`python3 cache_compare.py [--sin
 
 口径说明收在顶栏的 ⓘ 里，点击展开、Esc 关闭。
 
-配色：`cco` 用 Claude 品牌橙，`ccs` 虽然也是 Claude Code 但跑第三方模型故用紫区分，
-`grok` 用中性灰。
+配色：`cco` 用 Claude 品牌橙，`kimi` 沿用模型排行里 k3 的紫（k3 从 ccs 迁到
+kimi cli，同色表达这是同一个模型的故事），`codex` 用 OpenAI 绿，`ccs` 虽然也是
+Claude Code 但跑第三方模型故用紫区分（比 kimi 的紫偏红），`grok` 用中性灰。
 
 ## 口径
 
@@ -190,16 +199,21 @@ cc-switch 转发下的 prompt 缓存命中率，`python3 cache_compare.py [--sin
 按总量着色的话，热力图反映的只是会话有多长、缓存命中多少，而不是实际干了多少活。
 所以 `cache_read` 单列显示，不参与着色。
 
-## 四个必须注意的处理
+## 必须注意的处理
 
 1. **跨工具口径对齐** —— Grok 的 `inputTokens` **包含** `cachedReadTokens`，
-   Claude 的 `input_tokens` **不包含**。不减掉的话 grok 的增量会虚高一个数量级。
+   Codex 的 `input_tokens` **包含** `cached_input_tokens`，Claude 的
+   `input_tokens` **不包含**。不减掉的话 grok/codex 的增量会虚高一个数量级。
 2. **去重方式不同** —— Claude 按 `message.id`（流式中间态重复严重，实测官方侧
    1516 行里 1024 行是重复的，不去重虚高约 2.5 倍）；Grok 按
-   `session+prompt_id+模型`，实测 0 重复，数据天然干净。
-3. **两种时间戳** —— Claude 是 UTC ISO 串（尾部 Z），Grok 是 unix 秒，都要转本机
-   时区。不转的话本地晚上的会话会被算到第二天，热力图整体错位一格。
+   `session+prompt_id+模型`，实测 0 重复，数据天然干净；Kimi 每 turn 一条
+   `usage.record`、Codex 每次调用一条 `token_count`，都天然不重复，不用去重。
+3. **三种时间戳** —— Claude / Codex 是 UTC ISO 串（尾部 Z），Grok 是 unix 秒，
+   Kimi 是 unix **毫秒**，都要转本机时区（kimi 还要 /1000）。不转的话本地晚上的
+   会话会被算到第二天，热力图整体错位一格。
 4. **零计量记录跳过** —— 部分记录 usage 全为 0（流式占位），计入会污染活动天数。
+5. **Codex 取增量不取累计** —— `token_count` 里的 `total_token_usage` 是会话
+   累计值，直接用会重复计数；必须取 `last_token_usage`（每次调用的增量）。
 
 ## 关于费用
 
@@ -210,6 +224,7 @@ cc-switch 转发下的 prompt 缓存命中率，`python3 cache_compare.py [--sin
 
 Claude 侧完全无法算钱：官方账号是订阅制；第三方经 CC-Switch 代理，真实计费在代理
 侧，本地 jsonl 只有 token 数没有单价，且 MiniMax / GLM / k3 价格各不相同。
+Kimi / Codex 同样是订阅制，本地记录没有费用字段。
 
 **这是消耗看板，不是账单看板。**
 

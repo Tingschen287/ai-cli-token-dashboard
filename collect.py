@@ -31,9 +31,11 @@ from pathlib import Path
 
 # 要扫描的配置目录。key 是看板标识，dir 支持 ~ 展开，format 决定用哪个解析器。
 PROFILES = [
-    {"key": "cco",  "label": "Claude Official", "dir": "~/.claude-official", "format": "claude"},
-    {"key": "ccs",  "label": "CC-Switch",       "dir": "~/.claude",          "format": "claude"},
-    {"key": "grok", "label": "Grok",            "dir": "~/.grok",            "format": "grok"},
+    {"key": "cco",   "label": "Claude Official", "dir": "~/.claude-official", "format": "claude"},
+    {"key": "kimi",  "label": "Kimi",            "dir": "~/.kimi-code",       "format": "kimi"},
+    {"key": "codex", "label": "ChatGPT",         "dir": "~/.codex",           "format": "codex"},
+    {"key": "ccs",   "label": "CC-Switch",       "dir": "~/.claude",          "format": "claude"},
+    {"key": "grok",  "label": "Grok",            "dir": "~/.grok",            "format": "grok"},
 ]
 
 HERE = Path(__file__).resolve().parent
@@ -217,6 +219,68 @@ def parse_kimi_file(path):
     return rows, raw
 
 
+def parse_codex_file(path):
+    """Codex CLI：rollout-*.jsonl 里的 token_count 事件。
+
+    取 info.last_token_usage（这次 LLM 调用的增量）；total_token_usage 是
+    会话累计值，不取。注意 input_tokens **包含** cached_input_tokens
+    （同 grok，要减掉，否则缓存读重复计入增量）；codex 不区分缓存写入，
+    cache_write 记 0。timestamp 是 UTC ISO 串（同 claude，要转本机时区）。
+
+    模型和 cwd 不在 token_count 里，在 session_meta / turn_context 行，
+    逐行跟踪当前值。每个 token_count 事件一次调用、天然不重复，无需 dedup_key。
+    """
+    rows, raw = [], 0
+    try:
+        handle = path.open(errors="ignore")
+    except OSError:
+        return rows, raw
+    model = project = None
+    with handle:
+        for line in handle:
+            if '"session_meta"' in line or '"turn_context"' in line:
+                try:
+                    ctx = json.loads(line).get("payload") or {}
+                except json.JSONDecodeError:
+                    continue
+                model = ctx.get("model") or model
+                cwd = ctx.get("cwd")
+                if cwd:
+                    project = Path(cwd).name
+                continue
+            if '"token_count"' not in line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            payload = rec.get("payload") or {}
+            if payload.get("type") != "token_count":
+                continue
+            usage = (payload.get("info") or {}).get("last_token_usage")
+            if not isinstance(usage, dict):
+                continue
+            raw += 1
+            date = _local_date(rec.get("timestamp"))
+            if not date:
+                continue
+            cached = usage.get("cached_input_tokens") or 0
+            rows.append(Row(
+                dedup_key=None,
+                date=date,
+                model=model or "unknown",
+                project=project or "unknown",
+                input=max(0, (usage.get("input_tokens") or 0) - cached),
+                output=usage.get("output_tokens") or 0,
+                cache_write=0,
+                cache_read=cached,
+                reasoning=usage.get("reasoning_output_tokens") or 0,
+                calls=1,
+                cost_ticks=0,
+            ))
+    return rows, raw
+
+
 FORMATS = {
     # 主会话在 projects/<项目>/<会话>.jsonl（2 层），subagent 在
     # projects/<项目>/<会话>/subagents/agent-*.jsonl（4 层）。用 ** 递归把两层都
@@ -224,9 +288,9 @@ FORMATS = {
     # 不重叠（已验证），靠既有跨文件去重即可，不会重复计数。
     "claude": (parse_claude_file, "projects/**/*.jsonl"),
     "grok":   (parse_grok_file,   "sessions/*/*/updates.jsonl"),
-    # kimi 尚未挂进 PROFILES（前端还没集成第四个来源），这里先注册解析器，
-    # 供缓存对比脚本直接调用；要上看板时在 PROFILES 加一项即可生效。
     "kimi":   (parse_kimi_file,   "sessions/*/session_*/agents/*/wire.jsonl"),
+    # codex：sessions/YYYY/MM/DD/rollout-*.jsonl（4 层）
+    "codex":  (parse_codex_file,  "sessions/*/*/*/rollout-*.jsonl"),
 }
 
 # 文件级缓存：path -> (签名, rows, raw_count)
@@ -247,6 +311,48 @@ def _rows_of(path, parser):
     with _CACHE_LOCK:
         _CACHE[path] = (sig, rows, raw)
     return rows, raw, False
+
+
+def codex_quota(root):
+    """Codex 额度：rollout 文件的 token_count 事件自带 rate_limits，纯本地、不联网。
+
+    额度是账号当前状态，只需读 mtime 最新的那个文件的尾部。产出对齐成
+    QuotaPoller 相同的形状（{"windows": [...]}），前端 quotaInline 直接复用。
+    """
+    try:
+        newest = max(root.glob(FORMATS["codex"][1]),
+                     key=lambda p: p.stat().st_mtime)
+    except (ValueError, OSError):
+        return None
+    try:
+        with newest.open(errors="ignore") as f:
+            lines = collections.deque(f, maxlen=100)
+    except OSError:
+        return None
+    for line in reversed(lines):
+        if '"rate_limits"' not in line:
+            continue
+        try:
+            rl = (json.loads(line).get("payload") or {}).get("rate_limits")
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(rl, dict):
+            continue
+        windows = []
+        for src, key in ((rl.get("primary"), "week"), (rl.get("secondary"), "5h")):
+            if not isinstance(src, dict) or src.get("used_percent") is None:
+                continue
+            reset = src.get("resets_at")
+            windows.append({
+                # 窗口长短不定（周窗 10080 分钟），>1 天按周窗样式展示
+                "key": key if (src.get("window_minutes") or 0) > 1440 else "5h",
+                "pct": round(src.get("used_percent") or 0),
+                "reset": (datetime.fromtimestamp(reset).astimezone()
+                          .isoformat(timespec="seconds") if reset else ""),
+            })
+        if windows:
+            return {"windows": windows, "plan": rl.get("plan_type") or ""}
+    return None
 
 
 def blank():
@@ -318,6 +424,11 @@ def collect():
             "raw_rows": raw_rows,
             "deduped": duplicates,
         }
+        # codex 的额度在会话文件里白送（rate_limits），扫描时顺手取，不联网
+        if key == "codex" and root.is_dir():
+            q = codex_quota(root)
+            if q:
+                meta[key]["quota"] = q
 
     def flatten(source, fields):
         out = []
@@ -397,10 +508,11 @@ def quota_cco():
 
 
 def _ccs_quota_providers():
-    """cc-switch 库里有额度接口的 claude 供应商（Kimi/MiniMax）。
+    """cc-switch 库里有额度接口的 claude 供应商。
 
-    不管当前启用的是谁，两家都独立查询、独立展示（用户明确要求不合并）；
-    腾云智算这类没有额度接口的供应商不出现在列表里。
+    Kimi 的额度条已挪到 kimi code 行（同一账号、同一个 /v1/usages 接口，
+    只是认证换成 CLI 的 OAuth token），这里只剩 MiniMax；腾云智算这类没有
+    额度接口的供应商不出现在列表里。
     """
     if not CCS_DB.is_file():
         return []
@@ -421,10 +533,7 @@ def _ccs_quota_providers():
             continue
         base = env.get("ANTHROPIC_BASE_URL") or ""
         token = env.get("ANTHROPIC_AUTH_TOKEN") or ""
-        low = base.lower()
-        if "kimi.com/coding" in low and token:
-            out.append({"name": name, "kind": "kimi", "base": base, "token": token})
-        elif "minimax" in low and token:
+        if "minimax" in base.lower() and token:
             out.append({"name": name, "kind": "minimax", "base": base, "token": token})
     return out
 
@@ -496,6 +605,70 @@ def quota_ccs():
         except Exception as exc:
             out.append({"name": p["name"], "windows": [], "error": str(exc)[:80]})
     return {"providers": out} if out else None
+
+
+KIMI_CRED = Path.home() / ".kimi-code" / "credentials" / "kimi-code.json"
+KIMI_TOKEN_URL = "https://auth.kimi.com/api/oauth/token"
+# CLI 二进制内置的 OAuth client_id（公共客户端，无 secret）
+KIMI_CLIENT_ID = "17e5f671-d194-4dfb-9706-5516cb48c098"
+
+
+def _kimi_access_token():
+    """读 kimi code CLI 的 OAuth 凭证；过期就 refresh。
+
+    access_token 只有 15 分钟（expires_in=900），基本每次都靠 refresh。
+    refresh_token 会轮换且 CLI 自己也在读写 credentials 文件：refresh 后
+    必须重新读文件合并、原子写回、chmod 600，否则会把 CLI 的登录态顶掉。
+    """
+    try:
+        cred = json.loads(KIMI_CRED.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    token = cred.get("access_token") or ""
+    try:
+        if token and float(cred.get("expires_at") or 0) > time.time() + 60:
+            return token
+    except (TypeError, ValueError):
+        pass
+    rt = cred.get("refresh_token") or ""
+    if not rt:
+        return None
+    body = urllib.parse.urlencode({
+        "grant_type": "refresh_token", "refresh_token": rt,
+        "client_id": KIMI_CLIENT_ID,
+    }).encode()
+    req = urllib.request.Request(
+        KIMI_TOKEN_URL, data=body, method="POST",
+        headers={"Content-Type": "application/x-www-form-urlencoded",
+                 "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        tok = json.loads(resp.read().decode("utf-8"))
+    # 重新读再合并：refresh 期间 CLI 可能自己也写过凭证文件
+    try:
+        fresh = json.loads(KIMI_CRED.read_text(encoding="utf-8"))
+        fresh["access_token"] = tok["access_token"]
+        if tok.get("refresh_token"):
+            fresh["refresh_token"] = tok["refresh_token"]
+        expires_in = int(tok.get("expires_in") or 900)
+        fresh["expires_in"] = expires_in
+        fresh["expires_at"] = int(time.time()) + expires_in - 30
+        tmp = KIMI_CRED.with_name(KIMI_CRED.name + ".tmp")
+        tmp.write_text(json.dumps(fresh, indent=2), encoding="utf-8")
+        tmp.chmod(0o600)
+        tmp.replace(KIMI_CRED)
+    except OSError:
+        pass  # 写回失败最多下次再 refresh，不影响本次查询
+    return tok["access_token"]
+
+
+def quota_kimi_code():
+    """Kimi Code 官方账号额度：和 cc-switch 的 Kimi 供应商是同一个
+    /v1/usages 接口（同一账号），只是认证换成 CLI 的 OAuth access_token。"""
+    token = _kimi_access_token()
+    if not token:
+        return None
+    windows = _quota_kimi("https://api.kimi.com/coding", token)
+    return {"windows": windows} if windows else None
 
 
 GROK_AUTH = Path.home() / ".grok" / "auth.json"
@@ -605,7 +778,8 @@ class QuotaPoller:
 
     def poll_once(self):
         fresh = {}
-        for key, fn in (("cco", quota_cco), ("ccs", quota_ccs), ("grok", quota_grok)):
+        for key, fn in (("cco", quota_cco), ("kimi", quota_kimi_code),
+                        ("ccs", quota_ccs), ("grok", quota_grok)):
             try:
                 fresh[key] = fn()
             except Exception:
@@ -614,6 +788,7 @@ class QuotaPoller:
             old = self.latest
             merged = {}
             merged["cco"] = fresh["cco"] or old.get("cco")
+            merged["kimi"] = fresh["kimi"] or old.get("kimi")
             merged["grok"] = fresh["grok"] or old.get("grok")
             if fresh["ccs"] is None:
                 merged["ccs"] = old.get("ccs")
