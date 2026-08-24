@@ -17,7 +17,8 @@
 
 | 文件 | 角色 |
 |---|---|
-| `collect.py` | 唯一的 Python 文件（约 700 行）：扫描、聚合、渲染、HTTP 服务全部在此 |
+| `collect.py` | 看板唯一的 Python 文件（约 700 行）：扫描、聚合、渲染、HTTP 服务全部在此 |
+| `cache_compare.py` | 独立小脚本：对比 K3 在 kimi 官方接入与 cc-switch 转发下的缓存命中率，复用 `collect.py` 的解析器 |
 | `template.html` | 前端模板（约 1100 行），CSS + JS 全部内联，`/*__DATA__*/null` 是数据占位符 |
 | `dashboard.html` | **生成物**，由 `collect.py` 渲染产出，内嵌真实项目名，已在 `.gitignore` 排除，**绝不提交** |
 | `cc-token-dashboard.service.example` | systemd 用户服务模板，两处 `%h/path/to/...` 需改成实际路径 |
@@ -28,11 +29,14 @@
 - `PROFILES`（文件顶部）：扫描来源配置。key 是看板标识，`format` 决定解析器。增删来源改这里。
 - 解析器：`parse_claude_file`（`<dir>/projects/**/*.jsonl`，含 subagents 子目录）和
   `parse_grok_file`（`<dir>/sessions/*/*/updates.jsonl`），两者都产出统一的 `Row`
-  namedtuple，下游聚合只认 `Row`。
+  namedtuple，下游聚合只认 `Row`。另有 `parse_kimi_file`（wire.jsonl 的
+  `usage.record`，time 是 unix 毫秒）已注册进 `FORMATS` 但未挂 `PROFILES`，
+  目前只供 `cache_compare.py` 复用。
 - 文件级增量缓存 `_CACHE`：按 `(mtime_ns, size)` 签名判断，只重读变过的文件。
   会话记录 append-only，这是安全的。
 - `collect()`：聚合产出 `daily` / `models` / `projects`（都带 date 维度，供前端
-  按时间窗口重新聚合）和 `profiles` 总量。
+  按时间窗口重新聚合；`projects` 还带 model 维度——按项目面板的分段是模型）和
+  `profiles` 总量。
 - 额度轮询（仅 `--serve` 模式联网）：`QuotaPoller` 后台线程每 180 秒轮询
   cco（Anthropic OAuth `/api/oauth/usage`）、ccs（cc-switch 库里的 Kimi/MiniMax
   供应商，读 `~/.cc-switch/cc-switch.db` 拿 token）、grok（CLI 内部 billing 接口，
