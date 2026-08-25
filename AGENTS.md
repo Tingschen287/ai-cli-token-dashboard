@@ -71,15 +71,24 @@
   主屏和遮罩各调各的，不要回退成读全局 state。
 - 每个来源的结构：标题 + 月份轴 + 格子 + 额度行。额度在格子下方一行排开、
   **不换行**（用户明确要求保留这种方式）；没有色阶图例（用户明确不要）。
-- 品牌色：`COLORS`（cco 橙 / kimi 蓝 / codex 黑 / ccs 紫 / grok 灰）、`MODEL_COLORS`、
-  `LOGOS` 都在 script 顶部集中定义。模型 logo 与主题色对齐
-  artificialanalysis.ai 模型页：图片下载自 AA 站点 `/img/logos/`
-  （kimi.jpg / minimax_small.svg / zai_small.svg / openai_small.svg），
-  base64 内嵌（模型 logo 在 `MODEL_IMG`），
-  色值 Kimi `#047AFE` / MiniMax `#EB3568` / Z.ai `#1C7FF8` / OpenAI `#1F1F1F`
-  （codex 深色主题反为近白 `#E8E6E1`，纯黑会糊进底色）；
-  ccs 标题右侧只列当前可用模型（MiniMax + GLM，kimi 已迁出）。
-  kimi/codex 的行首 LOGOS 在 `MODEL_IMG` 之后运行时补入。
+- 品牌体系：`BRAND` 表（script 顶部）是唯一出处，18 家模型厂的
+  `{ color, img, dark? }` 全量内嵌——色值取自 [artificialanalysis.ai 模型页](https://artificialanalysis.ai/models)
+  JSON 的 `creator.color`，logo 下载自 AA `/img/logos/` 后 base64 内嵌，完全离线。
+  `BRAND_MATCH` 按模型名前缀命中品牌（顺序即优先级，`mmx` 用 includes）；
+  模型名没命中时按 `PROFILE_BRAND` 用来源兜底（cco→anthropic、kimi→kimi、
+  codex→openai、grok→xai；ccs 是转发层无兜底）。**以后出新模型不用改代码，
+  AA 上新厂时 BRAND 补一行 + BRAND_MATCH 补一条前缀**。
+  行色 `COLORS` 直接从 `brandColor(BRAND.x)` 派生（格子、排行条、饼图全联动）；
+  **格子按当日增量最高的主力模型着色**（`applyData` 里从 `DATA.models` 派生
+  `domModel`；周视图把周内各模型 incr 汇总取最大），tooltip 带 `mostly <model>`，
+  单品牌行命中同一品牌、视觉不变，ccs 行能看出哪天在跑哪家。
+  `dark` 是深色主题替代色（只有 openai 纯黑会糊进 `#191817` 底色需要，
+  反为近白 `#E8E6E1`；定义时按 `matchMedia` 换值，`shade()` 只认 hex）。
+  ccs 行色用星爆 logo 次主色青 `#50A0A0`（主色橙与 cco 撞，弃用），
+  行首 logo 也是自有图（品牌表外唯一静态内嵌），标题右侧只列当前可用模型
+  （MiniMax + GLM，kimi 已迁出）。
+  注意 AA 的 anthropic 标是黑字 AI 字母砖、xai 标是黑底白色掠影（SpaceXAI），
+  不是 Claude 星标和 grok 黑方标——对齐 AA 是用户明确要求。
 - 服务模式检测：能 `fetch('/api/data')` 就是服务模式，否则刷新按钮降级为提示
   （复制命令到剪贴板），不报错。
 
