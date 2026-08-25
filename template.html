@@ -206,7 +206,7 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
            column-gap: 10px; row-gap: 1px;
            font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .qinline .qprov { display: inline-flex; align-items: center; gap: 6px; }
-.qinline .qp { font-weight: 600; }
+
 .qinline .qsep { color: var(--border); }
 .qinline .qgrp { display: inline-flex; align-items: center; gap: 4px; }
 .qinline .qbar { width: 64px; height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; flex: none; }
@@ -215,7 +215,6 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .qinline .qerr { font-style: italic; }
 /* ccs 两家供应商四个窗口一行排开：供应商名粗体在前，5h/周进度条紧随其后 */
 .qinline-ccs { column-gap: 8px; }
-.qinline-ccs .qp { margin-right: -4px; }
 
 /* ---------- 右：排行表 ---------- */
 /* 放不下就滚动，不再按高度裁行数——裁掉的长尾用户根本看不到 */
@@ -276,14 +275,18 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .pie-wrap path:hover, .pie-wrap circle:hover { filter: brightness(1.12); }
 
 /* ---------- 浮层 ---------- */
+/* 气泡与面板同一套词汇：panel 底 + 1px border + 12px 圆角 + 柔阴影，
+   深浅主题自动适配；不再用纯黑反色块（糊进深色底、在米白底太跳） */
 #tip {
   position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
-  background: rgba(28,28,30,.95); color: #fff; font-size: 12px; line-height: 1.55;
-  padding: 7px 10px; border-radius: 7px; z-index: 50; white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  background: var(--panel); color: var(--text); font-size: 12px; line-height: 1.55;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  z-index: 50; white-space: nowrap;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
 }
 #tip b { font-weight: 600; }
-#tip .sm { color: rgba(255,255,255,.65); }
+#tip .sm { color: var(--muted); }
+#tip.plain { white-space: normal; max-width: 420px; }
 
 #info {
   position: fixed; right: 18px; top: 52px; z-index: 60; width: min(520px, calc(100vw - 36px));
@@ -332,7 +335,7 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
       </svg>
       <span id="refresh-text">Refresh</span>
     </button>
-    <button class="btn icon" id="info-btn" aria-label="Methodology" title="Methodology">ⓘ</button>
+    <button class="btn icon" id="info-btn" aria-label="Methodology" data-tip="Methodology">ⓘ</button>
   </header>
 
   <div class="stage">
@@ -344,8 +347,8 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
           <button data-view="cumulative" aria-pressed="false">Cumulative</button>
         </div>
         <span class="note" id="scale-note"></span>
-        <div class="metrics" id="metrics" title=""></div>
-        <button class="btn" id="longview-btn" title="打开半年 / 一年长区间视图">6 mo / 1 yr ▸</button>
+        <div class="metrics" id="metrics"></div>
+        <button class="btn" id="longview-btn" data-tip="打开半年 / 一年长区间视图">6 mo / 1 yr ▸</button>
       </div>
       <div class="cal-wrap" id="view"></div>
     </section>
@@ -397,7 +400,7 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
         <button data-weeks="26" aria-pressed="true">6 mo</button>
         <button data-weeks="53" aria-pressed="false">1 yr</button>
       </div>
-      <button class="btn" id="lv-close" title="关闭 (Esc)">✕</button>
+      <button class="btn" id="lv-close" data-tip="关闭 (Esc)">✕</button>
     </div>
     <div class="cal-wrap" id="lv-view"></div>
   </section>
@@ -615,13 +618,14 @@ function fmtReset(iso, style) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-function quotaGroup(key, w, showReset, stale, color) {
+function quotaGroup(key, w, showReset, stale, color, provName) {
   const pct = Math.max(0, Math.min(100, w.pct || 0));
   const weekly = w.key !== '5h';
   const resetIso = w.reset || (w.reset_ms ? new Date(w.reset_ms).toISOString() : '');
   const reset = fmtReset(resetIso, weekly ? 'datetime' : 'time');
-  const tip = (reset ? `↻ resets ${reset}` : 'no reset time') + (stale ? ' · query failed, showing last data' : '');
-  return `<span class="qgrp${weekly ? ' qgrp-w' : ''}" title="${tip}">
+  const tip = (provName ? provName + ' · ' : '')
+    + (reset ? `↻ resets ${reset}` : 'no reset time') + (stale ? ' · query failed, showing last data' : '');
+  return `<span class="qgrp${weekly ? ' qgrp-w' : ''}" data-tip="${tip}">
     <span class="qw">${weekly ? 'wk' : '5h'}</span>
     <span class="qbar"><i style="width:${pct}%;background:${color || COLORS[key]}"></i></span>
     <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
@@ -629,8 +633,7 @@ function quotaGroup(key, w, showReset, stale, color) {
   </span>`;
 }
 
-/* 行尾额度一行排开：cco/grok 窗口少，重置时间内联；ccs 两家四个窗口太长，
-   供应商名在每组最前，重置时间收进 tooltip */
+/* 行尾额度一行排开：cco/grok 窗口少，重置时间内联；ccs 的供应商名收进气泡 */
 function quotaInline(key) {
   // codex 的额度来自会话文件里的 rate_limits（collect 时随 meta 下发），
   // 不联网、静态模式也有；其余来源走后端 QuotaPoller（DATA.quota）
@@ -639,7 +642,7 @@ function quotaInline(key) {
     const q = p && p.quota;
     if (!q) return '';
     const out = q.windows.map(w => quotaGroup(key, w, true, false)).join('');
-    return out ? `<span class="qinline"${q.plan ? ` title="plan: ${q.plan}"` : ''}>${out}</span>` : '';
+    return out ? `<span class="qinline"${q.plan ? ` data-tip="plan: ${q.plan}"` : ''}>${out}</span>` : '';
   }
   const Q = DATA.quota;
   if (!Q) return '';
@@ -653,18 +656,18 @@ function quotaInline(key) {
     // grok 只有周额度一个窗口（CLI 内部 billing 接口），同 cco 处理
     out = Q.grok.windows.map(w => quotaGroup(key, w, true, false)).join('');
   } else if (key === 'ccs' && Q.ccs) {
-    // Kimi 的额度条已挪到 kimi code 行（同一账号），ccs 这里只剩 MiniMax。
-    // 一行排开不换行（用户明确要求）：供应商名在前，5h/周两组窗口紧随其后。
+    // Kimi 的额度条已挪到 kimi code 行（同一账号），ccs 这里只剩 MiniMax 一家
+    // 有额度，不带供应商标签也不会歧义（用户明确不要）；供应商名由 quotaGroup
+    // 的悬停气泡携带。一行排开不换行（用户明确要求）。
     const cells = [];
     Q.ccs.providers.forEach(prov => {
       const isMmx = /^minimax$/i.test(prov.name);
       const short = isMmx ? 'Minimax' : prov.name.replace(/\s*For Coding\s*/i, '');
       const color = isMmx ? BRAND.minimax.color : null;
       if (prov.error && !prov.windows.length) {
-        cells.push(`<span class="qp" title="${prov.error}">${short}</span>`, `<span class="qerr">${prov.error}</span>`);
+        cells.push(`<span class="qerr" data-tip="${short}: ${prov.error}">${short}: ${prov.error}</span>`);
       } else {
-        cells.push(`<span class="qp" title="${prov.error || ''}">${short}</span>`);
-        prov.windows.forEach(w => cells.push(quotaGroup(key, w, true, prov.stale, color)));
+        prov.windows.forEach(w => cells.push(quotaGroup(key, w, true, prov.stale, color, short)));
       }
     });
     return `<span class="qinline qinline-ccs">${cells.join('')}</span>`;
@@ -843,7 +846,7 @@ function renderCalendar(boxId, view, weeks) {
     const d = acc[key];
     const sub = winSub(d);
     const models = key === 'ccs'
-      ? `<span class="models" title="Available models: MiniMax · GLM">`
+      ? `<span class="models" data-tip="Available models: MiniMax · GLM">`
         + `<img class="mlogo" src="${BRAND.minimax.img}" alt="MiniMax">`
         + `<img class="mlogo" src="${BRAND.zai.img}" alt="GLM">` + `</span>`
       : '';
@@ -853,8 +856,8 @@ function renderCalendar(boxId, view, weeks) {
         <div class="cal-title">
           <img class="picon" src="${LOGOS[key]}" alt="">
           <span class="pname">${p.label}</span>
-          <span class="win" title="${fmt(d.incr)} tokens · ${sub}">${human(d.incr)}</span>
-          <span class="winsub" title="${sub}">${sub}</span>
+          <span class="win" data-tip="${fmt(d.incr)} tokens · ${sub}">${human(d.incr)}</span>
+          <span class="winsub" data-tip="${sub}">${sub}</span>
           <span class="tr">${models}<span class="range">${unit} active · ${human(p.incr)}</span></span>
         </div>
         ${monthsHtml}
@@ -1075,6 +1078,16 @@ document.addEventListener('mouseover', e => {
     placeTip(mbar);
     return;
   }
+  tip.classList.remove('plain');
+  // 其余带 data-tip 的元素（按钮、额度组、标题数字等）：统一走自定义气泡。
+  // 原生 title 的气泡是系统样式、和整体设计不搭，已全部换轨到这里
+  const tipped = e.target.closest('[data-tip]');
+  if (tipped && tipped.dataset.tip) {
+    tip.textContent = tipped.dataset.tip;
+    tip.classList.add('plain');
+    placeTip(tipped);
+    return;
+  }
   // 堆叠条的某一段：显示这个项目里该模型的具体用量
   const seg = e.target.closest('.stack span');
   if (seg) {
@@ -1110,7 +1123,7 @@ document.addEventListener('mouseover', e => {
 });
 document.addEventListener('mouseout', e => {
   if (!e.target.closest('#metrics') && !e.target.closest('.cal i') && !e.target.closest('.stack span')
-      && !e.target.closest('.mbar') && !e.target.closest('.pie-wrap')) return;
+      && !e.target.closest('.mbar') && !e.target.closest('.pie-wrap') && !e.target.closest('[data-tip]')) return;
   tip.style.opacity = 0;
   clearColumn();
 });
