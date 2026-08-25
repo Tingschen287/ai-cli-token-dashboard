@@ -61,7 +61,7 @@ body {
 .stage {
   flex: 1; min-height: 0;        /* min-height:0 是 flex 子项能收缩的前提 */
   display: grid;
-  grid-template-columns: minmax(0, 62fr) minmax(0, 38fr);
+  grid-template-columns: minmax(0, 70fr) minmax(0, 30fr);   /* 左日历/右排行 7:3，排行条不靠绝对宽度表达 */
   gap: 14px;
 }
 .side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
