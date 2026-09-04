@@ -307,3 +307,48 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
   /* 单栏模式下日历槽位纵向堆叠（槽宽 JS 侧已按整宽算） */
   .cal-row { flex-direction: column; }
 }
+
+/* ---------- 编辑态（布局） ---------- */
+/* 候补池：主区底部一行，虚线框； chip 可点（追加为新行）可拖（落点上屏） */
+#pool { flex: none; display: flex; align-items: center; gap: 10px;
+        background: var(--panel); border: 1px dashed var(--border);
+        border-radius: var(--radius); padding: 10px 14px; }
+#pool[hidden] { display: none; }
+#pool.dragover { border-color: var(--accent); }
+#pool .pool-label { font-size: 12px; color: var(--muted); flex: none; }
+#pool .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px;
+              border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+              font-size: 12px; cursor: grab; user-select: none; }
+#pool .chip:hover { border-color: var(--muted); }
+#pool .chip img { width: 15px; height: 15px; border-radius: 3px; object-fit: contain; }
+#pool .pool-empty { font-size: 12px; color: var(--muted); }
+#pool .spacer { flex: 1; }
+
+/* 布局被清空时的空态提示（编辑态与非编辑态共用） */
+.cal-empty { flex: 1; display: flex; align-items: center; justify-content: center;
+             color: var(--muted); font-size: 12px; }
+
+/* 编辑态槽位：虚线描边 + 右上角 − 徽标；投影指示线表示插入位置 */
+body.editing .cal-slot { outline: 1.5px dashed var(--muted); outline-offset: 3px;
+                         border-radius: 6px; position: relative; cursor: grab; }
+body.editing .cal-slot:hover { outline-color: var(--text); }
+.slot-x { position: absolute; top: -9px; right: -9px; z-index: 5;
+          width: 18px; height: 18px; border-radius: 50%; padding: 0;
+          background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+          font: inherit; font-size: 13px; line-height: 1; cursor: pointer;
+          display: flex; align-items: center; justify-content: center; }
+.slot-x:hover { color: #e5484d; border-color: #e5484d; }
+.cal-slot.drop-before { box-shadow: -4px 0 0 var(--accent); }
+.cal-slot.drop-after { box-shadow: 4px 0 0 var(--accent); }
+
+/* 行间与末尾的「新行」投放条 */
+.row-drop { flex: none; height: 16px; margin: 3px 0; border: 1.5px dashed var(--border);
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            font-size: 10px; color: var(--muted); }
+.row-drop.dragover { border-color: var(--accent); color: var(--accent); background: var(--faint); }
+
+/* 相邻槽位间的占比分隔条：绝对定位压在 SLOT_GAP 缝里，拖动调权重 */
+.slot-divider { position: absolute; top: 0; bottom: 0; width: 9px; cursor: col-resize;
+                z-index: 4; border-radius: 4px; }
+.slot-divider:hover { background: var(--faint); outline: 1px dashed var(--muted); }
+@media (max-width: 940px) { .slot-divider { display: none; } }

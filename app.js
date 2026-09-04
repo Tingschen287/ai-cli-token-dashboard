@@ -93,12 +93,14 @@ function render() {
   // 三个视图共用同一套格子行：每行一个平台，标题带窗口数字，图例/额度并进标题右端。
   // 累计视图的区别只在 tooltip（hover 显示截至当日的累计值），格子着色不变。
   renderCalendar('view', state.view, state.weeks);
+  applyEditChrome();   // 编辑态下重挂把手/徽标/投放条（非编辑态是空操作）
 }
 
 function renderAll() {
   renderMeta();
   render();
   renderRanks();
+  renderPool();   // autoSync 换了数据后候补池也要跟着重算（非编辑态是隐藏空操作）
   // 长区间遮罩开着的话跟着刷新
   if (!document.getElementById('longview').hidden) renderLongview();
 }
@@ -170,7 +172,7 @@ document.addEventListener('click', e => {
   if (!info.hidden && !info.contains(e.target) && e.target !== infoBtn) info.hidden = true;
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') { info.hidden = true; lv.hidden = true; }
+  if (e.key === 'Escape') { info.hidden = true; lv.hidden = true; exitEdit(); }
 });
 
 /* ---------- 每分钟自动同步 ----------

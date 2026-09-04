@@ -94,7 +94,11 @@ function renderCalendar(boxId, view, weeks) {
   // 暂无数据的来源（目录缺失/无记录）从渲染剔除；布局记录保留，数据回来自动恢复；
   // 整行为空则整行去掉
   const layout = LAYOUT.map(row => row.filter(s => byProfile[s.k])).filter(r => r.length);
-  if (!layout.length) { box.innerHTML = ''; return; }
+  if (!layout.length) {
+    // 布局被清空（全部移除到候补池）时的空态提示
+    box.innerHTML = '<div class="cal-empty">Nothing on board — click Layout to add sources</div>';
+    return;
+  }
   // 槽宽按行内权重分配；窄屏单栏模式下槽位纵向堆叠（见 940px 媒体查询），一律整宽
   const narrow = matchMedia('(max-width: 940px)').matches;
   const slotWidths = row => {
@@ -205,7 +209,7 @@ function renderCalendar(boxId, view, weeks) {
       : '';
     const quota = quotaInline(key);
     return `
-      <div class="cal-slot" style="width:${w}px">
+      <div class="cal-slot" data-k="${key}" style="width:${w}px">
         <div class="cal-title">
           <img class="picon" src="${LOGOS[key]}" alt="">
           <span class="pname">${p.label}</span>

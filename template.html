@@ -28,6 +28,7 @@
       </svg>
       <span id="refresh-text">Refresh</span>
     </button>
+    <button class="btn" id="layout-btn" data-tip="编辑布局：点 − 移除到候补池，拖动换位，拖分隔条调占比">Layout</button>
     <button class="btn icon" id="info-btn" aria-label="Methodology" data-tip="Methodology">ⓘ</button>
   </header>
 
@@ -75,6 +76,9 @@
       </section>
     </aside>
   </div>
+
+  <!-- 编辑态候补池：未上屏的来源组件，点击或拖入上屏；只在编辑布局时显示 -->
+  <div id="pool" hidden></div>
 </div>
 
 <div id="tip"></div>
