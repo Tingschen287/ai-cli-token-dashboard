@@ -86,7 +86,7 @@
   反为近白 `#E8E6E1`；定义时按 `matchMedia` 换值，`shade()` 只认 hex）。
   ccs 行色用星爆 logo 次主色青 `#50A0A0`（主色橙与 cco 撞，弃用），
   行首 logo 也是自有图（品牌表外唯一静态内嵌），标题右侧只列当前可用模型
-  （MiniMax + GLM，kimi 已迁出）。
+  （MiniMax + GLM + DeepSeek，kimi 已迁出）。
   注意 AA 的 anthropic 标是黑字 AI 字母砖、xai 标是黑底白色掠影（SpaceXAI），
   不是 Claude 星标和 grok 黑方标——对齐 AA 是用户明确要求。
 - 服务模式检测：能 `fetch('/api/data')` 就是服务模式，否则刷新按钮降级为提示

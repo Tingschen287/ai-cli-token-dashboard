@@ -904,9 +904,10 @@ function renderCalendar(boxId, view, weeks) {
     const d = acc[key];
     const sub = winSub(d);
     const models = key === 'ccs'
-      ? `<span class="models" data-tip="Available models: MiniMax · GLM">`
+      ? `<span class="models" data-tip="Available models: MiniMax · GLM · DeepSeek">`
         + `<img class="mlogo" src="${BRAND.minimax.img}" alt="MiniMax">`
-        + `<img class="mlogo" src="${BRAND.zai.img}" alt="GLM">` + `</span>`
+        + `<img class="mlogo" src="${BRAND.zai.img}" alt="GLM">`
+        + `<img class="mlogo" src="${BRAND.deepseek.img}" alt="DeepSeek">` + `</span>`
       : '';
     const quota = quotaInline(key);
     return `
