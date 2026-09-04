@@ -36,6 +36,7 @@ PROFILES = [
     {"key": "codex", "label": "ChatGPT",         "dir": "~/.codex",           "format": "codex"},
     {"key": "ccs",   "label": "CC-Switch",       "dir": "~/.claude",          "format": "claude"},
     {"key": "grok",  "label": "Grok",            "dir": "~/.grok",            "format": "grok"},
+    {"key": "oc",    "label": "OpenCode",        "dir": "~/.local/share/opencode", "format": "opencode"},
 ]
 
 HERE = Path(__file__).resolve().parent
@@ -281,6 +282,63 @@ def parse_codex_file(path):
     return rows, raw
 
 
+def parse_opencode_file(path):
+    """OpenCode：会话存储是单个 SQLite 库（opencode.db），message.data 是 JSON。
+
+    一条 assistant message = 一次完整响应，message.id 唯一、天然不重复，无需
+    dedup_key（整个库每次全量重读，也没有跨文件重复问题）。实测 86/86 条满足
+    total = input + output + reasoning + cache.read + cache.write，即
+    input **不含** cache read（与 claude 同口径，不用减）。
+    time.created 是 unix **毫秒**（同 kimi，/1000）。项目取 session.directory 末段。
+    cost 字段是 USD（按 provider 报价算的实估值），折成 cost_ticks 复用 ≈$ 显示。
+    """
+    import sqlite3
+
+    rows, raw = [], 0
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    except sqlite3.Error:
+        return rows, raw
+    try:
+        query = (
+            "SELECT m.data, s.directory FROM message m"
+            " LEFT JOIN session s ON s.id = m.session_id"
+            " WHERE json_extract(m.data, '$.role') = 'assistant'"
+        )
+        for data, directory in db.execute(query):
+            try:
+                d = json.loads(data)
+            except json.JSONDecodeError:
+                continue
+            usage = d.get("tokens")
+            if not isinstance(usage, dict):
+                continue
+            raw += 1
+            t = (d.get("time") or {}).get("created")
+            date = _local_date(t / 1000) if isinstance(t, (int, float)) else None
+            if not date:
+                continue
+            cache = usage.get("cache") or {}
+            rows.append(Row(
+                dedup_key=None,
+                date=date,
+                model=d.get("modelID") or "unknown",
+                project=(Path(directory).name if directory else "") or "unknown",
+                input=usage.get("input") or 0,
+                output=usage.get("output") or 0,
+                cache_write=cache.get("write") or 0,
+                cache_read=cache.get("read") or 0,
+                reasoning=usage.get("reasoning") or 0,
+                calls=1,
+                cost_ticks=round((d.get("cost") or 0) * 1e9),
+            ))
+    except sqlite3.Error:
+        pass
+    finally:
+        db.close()
+    return rows, raw
+
+
 FORMATS = {
     # 主会话在 projects/<项目>/<会话>.jsonl（2 层），subagent 在
     # projects/<项目>/<会话>/subagents/agent-*.jsonl（4 层）。用 ** 递归把两层都
@@ -291,6 +349,8 @@ FORMATS = {
     "kimi":   (parse_kimi_file,   "sessions/*/session_*/agents/*/wire.jsonl"),
     # codex：sessions/YYYY/MM/DD/rollout-*.jsonl（4 层）
     "codex":  (parse_codex_file,  "sessions/*/*/*/rollout-*.jsonl"),
+    # opencode：整个存储就是一个 SQLite 库，glob 直接命中库文件本身
+    "opencode": (parse_opencode_file, "opencode.db"),
 }
 
 # 文件级缓存：path -> (签名, rows, raw_count)
@@ -300,9 +360,21 @@ _CACHE = {}
 _CACHE_LOCK = threading.Lock()
 
 
-def _rows_of(path, parser):
+def _sig_of(path):
     st = path.stat()
-    sig = (st.st_mtime_ns, st.st_size)
+    # SQLite WAL 模式下新数据先进 -wal 文件，主库 mtime 可能滞后到 checkpoint；
+    # 签名不把 wal 算上的话，正在进行的 opencode 会话会漏刷新
+    if path.suffix == ".db":
+        try:
+            wst = path.with_name(path.name + "-wal").stat()
+            return (max(st.st_mtime_ns, wst.st_mtime_ns), st.st_size + wst.st_size)
+        except OSError:
+            pass
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _rows_of(path, parser):
+    sig = _sig_of(path)
     with _CACHE_LOCK:
         hit = _CACHE.get(path)
         if hit and hit[0] == sig:
