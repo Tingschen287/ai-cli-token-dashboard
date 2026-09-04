@@ -162,6 +162,17 @@ function renderCalendar(boxId, view, weeks) {
     // 越来越深的渐变带，没有信息量；累计值挪进 hover tooltip
     const th = thresholds(Object.values(bucket).map(r => r.incr));
 
+    // 周视图改迷你柱状（ChatGPT 桌面端式）：列内自下而上填格，填几格 = 本周总量
+    // 占可见窗口最大周的比例（最大周满 7 格），颜色统一不分深浅（soft 混色降硬度），
+    // 周与周的差异看柱子高低而非色阶。刻度基准只看可见窗口内的周
+    let wkMax = 0;
+    if (weekly) {
+      for (let t = start.getTime(); t <= end.getTime(); t += 7 * DAY) {
+        const r = bucket[keyOf(iso(new Date(t)))];
+        if (r && r.incr > wkMax) wkMax = r.incr;
+      }
+    }
+
     const cells = [];
     let colIndex = -1, run = 0;
     for (let t = start.getTime(); t <= end.getTime(); t += DAY) {
@@ -169,8 +180,16 @@ function renderCalendar(boxId, view, weeks) {
       if (d.getDay() === 0) colIndex++;
       const row = bucket[keyOf(dk)];
       if (cumulative) run += row ? row.incr : 0;
-      const lv = row ? level(row.incr, th) : 0;
-      const bg = shade(domColor[keyOf(dk)] || COLORS[key], lv);
+      let bg;
+      if (weekly) {
+        // 非零周保底 1 格；行序周日(0)在顶、周六(6)在底，填底部 fill 行。
+        // 颜色统一不分深浅，但不用满饱和（太硬）——和排行条一样走 soft() 向面板底混 15%
+        const fill = row && wkMax ? Math.max(1, Math.round(row.incr / wkMax * 7)) : 0;
+        bg = d.getDay() >= 7 - fill ? soft(domColor[keyOf(dk)] || COLORS[key]) : null;
+      } else {
+        const lv = row ? level(row.incr, th) : 0;
+        bg = shade(domColor[keyOf(dk)] || COLORS[key], lv);
+      }
       const label = weekly ? `week of ${keyOf(dk)}` : dk;
       const cum = cumulative ? ` data-cum="${run}"` : '';
       const who = domName[keyOf(dk)] ? ` data-w="${domName[keyOf(dk)]}"` : '';
