@@ -341,10 +341,14 @@ body.editing .cal-slot:hover { outline-color: var(--text); }
 .cal-slot.drop-before { box-shadow: -4px 0 0 var(--accent); }
 .cal-slot.drop-after { box-shadow: 4px 0 0 var(--accent); }
 
-/* 行间与末尾的「新行」投放条 */
-.row-drop { flex: none; height: 16px; margin: 3px 0; border: 1.5px dashed var(--border);
-            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+/* 行间与末尾的「新行」投放条：只是拖放目标，平时隐藏；拖拽中（body.dragging）
+   才浮现，绝对定位悬浮在行界上、不占纵向空间——常驻会把固定高度的行压出重叠 */
+.row-drop { position: absolute; left: 0; right: 0; height: 18px; z-index: 6;
+            display: none; align-items: center; justify-content: center;
+            border: 1.5px dashed var(--muted); border-radius: 9px;
+            background: color-mix(in srgb, var(--bg) 82%, transparent);
             font-size: 10px; color: var(--muted); }
+body.editing.dragging .row-drop { display: flex; }
 .row-drop.dragover { border-color: var(--accent); color: var(--accent); background: var(--faint); }
 
 /* 相邻槽位间的占比分隔条：绝对定位压在 SLOT_GAP 缝里，拖动调权重 */

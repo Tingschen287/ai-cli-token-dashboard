@@ -137,7 +137,7 @@ function exitEdit() {
   if (!editing) return;
   editing = false;
   dragKey = null;
-  document.body.classList.remove('editing');
+  document.body.classList.remove('editing', 'dragging');
   document.getElementById('layout-btn').textContent = 'Layout';
   document.getElementById('pool').hidden = true;
   render();
@@ -148,7 +148,7 @@ function renderPool() {
   if (!editing) { pool.hidden = true; return; }
   const avail = poolProfiles();
   pool.innerHTML =
-    `<span class="pool-label">Available</span>`
+    `<span class="pool-label">Available — 点击追加为新行，拖到某个槽位上并入该行</span>`
     + (avail.length
       ? avail.map(p => `<span class="chip" draggable="true" data-k="${p.key}">
           <img src="${LOGOS[p.key] || ''}" alt="">${p.label}</span>`).join('')
@@ -165,10 +165,14 @@ function renderPool() {
     });
     chip.addEventListener('dragstart', e => {
       dragKey = key;
+      document.body.classList.add('dragging');
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', key);
     });
-    chip.addEventListener('dragend', () => { dragKey = null; });
+    chip.addEventListener('dragend', () => {
+      dragKey = null;
+      document.body.classList.remove('dragging');
+    });
   }
   pool.querySelector('#pool-reset').addEventListener('click', () => {
     try { localStorage.removeItem(LAYOUT_KEY); } catch (err) {}
@@ -193,11 +197,13 @@ function bindRowDrop(strip, targetKey) {
     clearDropHints();
     strip.classList.add('dragover');
   });
+  strip.addEventListener('dragleave', () => strip.classList.remove('dragover'));
   strip.addEventListener('drop', e => {
     e.preventDefault();
     if (dragKey === null) return;
     const key = dragKey;
     dragKey = null;
+    document.body.classList.remove('dragging');
     moveSlot(key, targetKey ? { newRowBeforeKey: targetKey } : { newRowEnd: true });
     persist();
   });
@@ -242,29 +248,42 @@ function applyEditChrome() {
   if (!stack) return;                                 // 空态提示下没有可挂的
   const narrow = matchMedia('(max-width: 940px)').matches;
 
-  for (const rowEl of stack.querySelectorAll('.cal-row')) {
+  stack.style.position = 'relative';                  // 投放条绝对定位的锚
+  const rowEls = [...stack.querySelectorAll('.cal-row')];
+  rowEls.forEach(rowEl => {
     rowEl.style.position = 'relative';                // 分隔条绝对定位的锚
+    // 投放条悬浮在本行上边缘（上下行各盖一半），拖拽中才显示，不占纵向空间
     const strip = document.createElement('div');
     strip.className = 'row-drop';
     strip.innerHTML = '<span>＋ 新行</span>';
-    stack.insertBefore(strip, rowEl);
+    strip.style.top = (rowEl.offsetTop - 9) + 'px';
+    stack.appendChild(strip);
     bindRowDrop(strip, rowEl.querySelector('.cal-slot')?.dataset.k || null);
+  });
+  if (rowEls.length) {
+    const last = rowEls[rowEls.length - 1];
+    const endStrip = document.createElement('div');
+    endStrip.className = 'row-drop';
+    endStrip.innerHTML = '<span>＋ 新行</span>';
+    endStrip.style.top = (last.offsetTop + last.offsetHeight - 9) + 'px';
+    stack.appendChild(endStrip);
+    bindRowDrop(endStrip, null);
   }
-  const endStrip = document.createElement('div');
-  endStrip.className = 'row-drop';
-  endStrip.innerHTML = '<span>＋ 新行</span>';
-  stack.appendChild(endStrip);
-  bindRowDrop(endStrip, null);
 
   for (const slotEl of stack.querySelectorAll('.cal-slot')) {
     const key = slotEl.dataset.k;
     slotEl.draggable = true;
     slotEl.addEventListener('dragstart', e => {
       dragKey = key;
+      document.body.classList.add('dragging');        // 拖拽中才浮现新行投放条
       e.dataTransfer.effectAllowed = 'move';
       e.dataTransfer.setData('text/plain', key);
     });
-    slotEl.addEventListener('dragend', () => { dragKey = null; clearDropHints(); });
+    slotEl.addEventListener('dragend', () => {
+      dragKey = null;
+      document.body.classList.remove('dragging');
+      clearDropHints();
+    });
     slotEl.addEventListener('dragover', e => {
       if (dragKey === null || dragKey === key) return;
       e.preventDefault();
@@ -279,6 +298,7 @@ function applyEditChrome() {
       const before = e.clientX < r.left + r.width / 2;
       const drag = dragKey;
       dragKey = null;
+      document.body.classList.remove('dragging');
       moveSlot(drag, before ? { beforeKey: key } : { afterKey: key });
       persist();
     });
@@ -320,6 +340,7 @@ poolEl.addEventListener('drop', e => {
   if (dragKey === null || !findSlot(dragKey)) return;
   const key = dragKey;
   dragKey = null;
+  document.body.classList.remove('dragging');
   removeSlot(key);
   persist();
 });
