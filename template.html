@@ -547,7 +547,7 @@ function shade(hex, lv) {
 
 /* ---------- 数据整形 ---------- */
 // 刷新会整体换掉 DATA，所以派生结构必须能重算，不能是顶层 const
-let PROFILES = [], byProfile = {}, domModel = {}, firstDate = null, lastDate = null;
+let PROFILES = [], byProfile = {}, domModel = {}, firstDate = null, lastDate = null, LAYOUT = [];
 
 function applyData(payload) {
   DATA = payload;
@@ -569,6 +569,7 @@ function applyData(payload) {
   const allDates = DATA.daily.map(r => r.date).sort();
   firstDate = allDates[0];
   lastDate = allDates[allDates.length - 1];
+  LAYOUT = getLayout();
 }
 
 // 主屏固定 3 个月；半年/一年在长区间遮罩里看（lvState）
@@ -726,14 +727,66 @@ function renderMeta() {
   metrics.dataset.tm = fmt(totalMsgs);
 }
 
+/* ---------- 布局状态 ----------
+   布局是用户状态，不再是代码常量：localStorage[LAYOUT_KEY] 存 [[{k, w}]...]，
+   w 是行内宽度权重（占比）。候补池不存储——派生 = 有数据的来源 − 已放置的 key。
+   PROFILES 里新增的来源不在布局中时，自动作为新行追加到末尾（保证一眼看到），
+   不满意再进编辑态调整。 */
+const LAYOUT_KEY = 'tdb-layout-v1';
+const DEFAULT_LAYOUT = [
+  [{ k: 'cco', w: 1 }],
+  [{ k: 'codex', w: 1 }, { k: 'grok', w: 1 }],
+  [{ k: 'ccs', w: 1 }, { k: 'kimi', w: 1 }],
+];
+const defaultLayout = () => DEFAULT_LAYOUT.map(row => row.map(s => ({ ...s })));
+
+/* 自愈：剔除未知 key、跨行去重、回收空行、非法权重回落 1。
+   暂无数据的已知来源允许留在布局里（渲染时按 byProfile 过滤），数据回来自动恢复 */
+function healLayout(rows) {
+  const known = new Set((DATA.profiles || []).map(p => p.key));
+  const seen = new Set();
+  return rows
+    .map(row => (Array.isArray(row) ? row : [])
+      .filter(s => s && known.has(s.k) && !seen.has(s.k) && seen.add(s.k))
+      .map(s => ({ k: s.k, w: +s.w > 0 ? +s.w : 1 })))
+    .filter(row => row.length);
+}
+
+function loadLayout() {
+  let rows = null;
+  try {
+    const raw = localStorage.getItem(LAYOUT_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) rows = parsed;              // 裸数组也按行布局读
+      else if (parsed && Array.isArray(parsed.rows)) rows = parsed.rows;
+    }
+  } catch (err) { /* 存储损坏等同无存储，回落默认布局 */ }
+  return healLayout(rows || defaultLayout());
+}
+
+function saveLayout(rows) {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(rows)); } catch (err) { /* 隐私模式等写不进去就算了 */ }
+}
+
+/* 入口：加载 + 自愈 + 新来源自动落位；有追加才写回，避免无意义的存储写入 */
+function getLayout() {
+  const rows = loadLayout();
+  const placed = new Set(rows.flat().map(s => s.k));
+  let added = false;
+  for (const p of PROFILES) {
+    if (!placed.has(p.key)) { rows.push([{ k: p.key, w: 1 }]); added = true; }
+  }
+  if (added) saveLayout(rows);
+  return rows;
+}
+
 /* ---------- 左：日历 ----------
-   三行分组布局：cco 独自一行（主力工具）；codex+grok（次级工具）；
-   ccs+kimi（同一个 k3 的迁移前后，并排正好对照）。每个来源占一个槽位，
-   一行 1~2 个槽位并排。格子是固定大小的正方形、绝不拉伸（用户明确要求），
-   列数随槽位宽度能放几列放几列（一列 = 一周）——独占行天然多放几列、
+   布局分行分组（见上面「布局状态」），每个来源占一个槽位，一行 1~N 个槽位
+   按权重分宽并排。格子是固定大小的正方形、绝不拉伸（用户明确要求），
+   列数随槽位宽度能放几列放几列（一列 = 一周）——宽的槽位天然多放几列、
    多显示几周历史。月份轴在每个槽位内部，按自己的列几何对齐。
    主屏与长区间遮罩共用，box 各自传入；weeks 是列数上限（遮罩的 6mo/1yr）。 */
-const ROW_LAYOUT = [['cco'], ['codex', 'grok'], ['ccs', 'kimi']];
 const SLOT_GAP = 24;
 const CELL = 17;   // 格子边长固定（分支开始时 1920×1080 下的大小）
 
@@ -744,13 +797,18 @@ function renderCalendar(boxId, view, weeks) {
   const { acc } = windowTotals(view, weeks);
   const end = parse(lastDate);
 
-  // 不存在的来源（目录缺失/无记录）从布局剔除；整行为空则整行去掉
-  const layout = ROW_LAYOUT.map(keys => keys.filter(k => byProfile[k])).filter(r => r.length);
+  // 暂无数据的来源（目录缺失/无记录）从渲染剔除；布局记录保留，数据回来自动恢复；
+  // 整行为空则整行去掉
+  const layout = LAYOUT.map(row => row.filter(s => byProfile[s.k])).filter(r => r.length);
   if (!layout.length) { box.innerHTML = ''; return; }
-  // 槽宽按行算：独占一行的用整宽，双槽位行各半；
-  // 窄屏单栏模式下槽位纵向堆叠（见 940px 媒体查询），一律整宽
+  // 槽宽按行内权重分配；窄屏单栏模式下槽位纵向堆叠（见 940px 媒体查询），一律整宽
   const narrow = matchMedia('(max-width: 940px)').matches;
-  const rowSlotW = n => (narrow || n === 1) ? box.clientWidth : (box.clientWidth - SLOT_GAP) / 2;
+  const slotWidths = row => {
+    if (narrow || row.length === 1) return row.map(() => box.clientWidth);
+    const total = row.reduce((s, x) => s + x.w, 0);
+    const avail = box.clientWidth - SLOT_GAP * (row.length - 1);
+    return row.map(x => Math.round(avail * x.w / total));
+  };
   // 槽位放得下的列数（一列 = 一周）。主屏不设上限：能放几列放几列，多放就是
   // 多显示几周历史（用户明确要求）；遮罩里受 weeks 约束（6mo/1yr 是显式选择）
   const colCap = boxId === 'view' ? 999 : weeks;
@@ -866,9 +924,9 @@ function renderCalendar(boxId, view, weeks) {
       </div>`;
   };
 
-  const rows = layout.map(keys => {
-    const w = rowSlotW(keys.length);
-    return `<div class="cal-row">${keys.map(k => slotHtml(k, w)).join('')}</div>`;
+  const rows = layout.map(row => {
+    const widths = slotWidths(row);
+    return `<div class="cal-row">${row.map((s, i) => slotHtml(s.k, widths[i])).join('')}</div>`;
   }).join('');
 
   box.innerHTML = `
