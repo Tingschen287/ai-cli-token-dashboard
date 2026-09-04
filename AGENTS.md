@@ -100,9 +100,12 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   主屏和遮罩各调各的，不要回退成读全局 state；遮罩跟随同一份 LAYOUT。
 - 每个来源的结构：标题 + 月份轴 + 格子 + 额度行。额度在格子下方一行排开、
   **不换行**（用户明确要求保留这种方式）；没有色阶图例（用户明确不要）。
-- 品牌体系：`BRAND` 表（brand.js 顶部）是唯一出处，18 家模型厂的
-  `{ color, img, dark? }` 全量内嵌——色值取自 [artificialanalysis.ai 模型页](https://artificialanalysis.ai/models)
-  JSON 的 `creator.color`，logo 下载自 AA `/img/logos/` 后 base64 内嵌，完全离线。
+- 品牌体系：`BRAND` 表（brand.js 顶部）是唯一出处，19 家模型厂的
+  `{ name, color, img, dark? }` 全量内嵌——色值取自 [artificialanalysis.ai 模型页](https://artificialanalysis.ai/models)
+  JSON 的 `creator.color`，logo 下载自 AA `/img/logos/` 后 base64 内嵌，完全离线；
+  `name` 是 AA creator 名，供 ccs 可用模型选择器显示（zai 另由 `BRAND_DISPLAY`
+  覆盖成用户习惯的 GLM）。2026-09 同步新增 mbzuai；upstage / sk-telecom / lg /
+  motif-technologies 已不在 AA 页，保留原样不动。
   `BRAND_MATCH` 按模型名前缀命中品牌（顺序即优先级，`mmx` 用 includes）；
   模型名没命中时按 `PROFILE_BRAND` 用来源兜底（cco→anthropic、kimi→kimi、
   codex→openai、grok→xai；ccs 是转发层、oc 是工具，都无兜底，回落行色
@@ -115,8 +118,10 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   `dark` 是深色主题替代色（只有 openai 纯黑会糊进 `#191817` 底色需要，
   反为近白 `#E8E6E1`；定义时按 `matchMedia` 换值，`shade()` 只认 hex）。
   ccs 行色用星爆 logo 次主色青 `#50A0A0`（主色橙与 cco 撞，弃用），
-  行首 logo 也是自有图，标题右侧只列当前可用模型
-  （MiniMax + GLM + DeepSeek，kimi 已迁出）。oc（OpenCode）是工具不是模型厂，
+  行首 logo 也是自有图；标题右侧「可用模型」是用户状态（localStorage
+  `tdb-ccs-models-v1`，BRAND key 数组，默认 MiniMax + GLM + DeepSeek，kimi 已迁出），
+  末尾 + 按钮点开浮层选择器（BRAND 全量，点选即存即渲，Reset 恢复默认，允许清空）。
+  状态是 `let CCS_MODELS`，`applyData()` 末尾重算自愈。oc（OpenCode）是工具不是模型厂，
   AA 无条目：行首标用官方品牌资源（opencode.ai/brand 的资源包）的像素 O
   （官方浅底配色 `#211E1E` 环 + `#4B4646` 芯，外套官方米白 `#F1ECEC` 底砖
   保证明暗可读），行色用官方灰 `#4B4646`（深色主题换 `#CFCECD`）。

@@ -203,9 +203,12 @@ cco / ccs / grok / kimi 走后端慢轮询（仅服务模式；kimi 用 CLI 的 
 口径说明收在顶栏的 ⓘ 里，点击展开、Esc 关闭。
 
 配色：全部对齐 [artificialanalysis.ai 模型页](https://artificialanalysis.ai/models)——模板里内嵌了
-AA 全部 18 家模型厂的品牌色和 logo（`BRAND` 表），格子、行首图标、排行条、饼图
+AA 全部 19 家模型厂的品牌色和 logo（`BRAND` 表），格子、行首图标、排行条、饼图
 都从这里取色；新模型按名字前缀自动命中（deepseek / qwen / gemini / llama /
 mistral 等开箱即有），`ccs` 是转发层、AA 无条目，用自有 logo 的青色区分。
+ccs 槽位标题右侧的「可用模型」可以自己改：点 logo 区末尾的 + 按钮，
+在浮层里点选全部品牌（默认 MiniMax + GLM + DeepSeek），改完立即生效，
+存在浏览器本地，下次打开还在；Reset 恢复默认。
 格子按当天增量最高的主力模型着色（悬停显示 `mostly <模型名>`），ccs 行能直接
 看出哪天在跑 MiniMax、哪天在跑 GLM / Kimi。
 
