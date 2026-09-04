@@ -116,8 +116,10 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   反为近白 `#E8E6E1`；定义时按 `matchMedia` 换值，`shade()` 只认 hex）。
   ccs 行色用星爆 logo 次主色青 `#50A0A0`（主色橙与 cco 撞，弃用），
   行首 logo 也是自有图，标题右侧只列当前可用模型
-  （MiniMax + GLM + DeepSeek，kimi 已迁出）。oc 同理是自有绿 `#43A047` +
-  绿底白 `<>` 自有标（OpenCode 是工具不是模型厂，AA 无条目）。
+  （MiniMax + GLM + DeepSeek，kimi 已迁出）。oc（OpenCode）是工具不是模型厂，
+  AA 无条目：行首标用官方品牌资源（opencode.ai/brand 的资源包）的像素 O
+  （官方浅底配色 `#211E1E` 环 + `#4B4646` 芯，外套官方米白 `#F1ECEC` 底砖
+  保证明暗可读），行色用官方灰 `#4B4646`（深色主题换 `#CFCECD`）。
   注意 AA 的 anthropic 标是黑字 AI 字母砖、xai 标是黑底白色掠影（SpaceXAI），
   不是 Claude 星标和 grok 黑方标——对齐 AA 是用户明确要求。
 - 服务模式检测：能 `fetch('/api/data')` 就是服务模式，否则刷新按钮降级为提示
