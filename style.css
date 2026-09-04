@@ -356,3 +356,36 @@ body.editing.dragging .row-drop { display: flex; }
                 z-index: 4; border-radius: 4px; }
 .slot-divider:hover { background: var(--faint); outline: 1px dashed var(--muted); }
 @media (max-width: 940px) { .slot-divider { display: none; } }
+
+/* ---------- ccs 可用模型选择器 ---------- */
+/* + 按钮：常显、低调（细描边 + 暗字），hover 提亮 */
+.models-add {
+  width: 15px; height: 15px; border-radius: 3px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font: inherit; font-size: 11px; line-height: 1; color: var(--muted);
+  background: transparent; border: 1px solid var(--border); cursor: pointer;
+  padding: 0; transition: color .15s, border-color .15s, background .15s;
+}
+.models-add:hover { color: var(--text); border-color: var(--muted); background: var(--faint); }
+.models-add:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* 浮层：与 #tip / #info 同一套词汇（panel 底 + 1px border + 12px 圆角 + 柔阴影） */
+#ccs-picker {
+  position: fixed; z-index: 80; width: 248px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 40px rgba(0,0,0,.18); padding: 10px 12px 12px;
+}
+.ccs-picker-title { font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+.ccs-picker-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ccs-pick {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  font: inherit; font-size: 12px; color: var(--muted);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 5px 8px; cursor: pointer; user-select: none;
+  white-space: nowrap; overflow: hidden;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.ccs-pick img { width: 15px; height: 15px; border-radius: 3px; object-fit: contain; flex: none; }
+.ccs-pick span { overflow: hidden; text-overflow: ellipsis; }
+.ccs-pick:hover { border-color: var(--muted); color: var(--text); }
+.ccs-pick.on { color: var(--text); border-color: var(--accent); background: var(--faint); }
+.ccs-picker-reset { margin-top: 8px; }

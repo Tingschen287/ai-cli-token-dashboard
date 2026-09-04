@@ -201,11 +201,13 @@ function renderCalendar(boxId, view, weeks) {
     // 右端 ccs 可用模型 logo + 范围总量小字。额度在格子下方的 cal-foot。
     const d = acc[key];
     const sub = winSub(d);
+    // ccs 可用模型是用户状态（CCS_MODELS，localStorage 持久化），标题右侧按它渲染；
+    // 末尾 + 按钮常显（不需进 Layout 编辑态），点开选择器切换
+    const names = CCS_MODELS.map(brandDisplayName);
     const models = key === 'ccs'
-      ? `<span class="models" data-tip="Available models: MiniMax · GLM · DeepSeek">`
-        + `<img class="mlogo" src="${BRAND.minimax.img}" alt="MiniMax">`
-        + `<img class="mlogo" src="${BRAND.zai.img}" alt="GLM">`
-        + `<img class="mlogo" src="${BRAND.deepseek.img}" alt="DeepSeek">` + `</span>`
+      ? `<span class="models" data-tip="${names.length ? 'Available models: ' + names.join(' · ') : '点击 + 选择可用模型'}">`
+        + CCS_MODELS.map(k => `<img class="mlogo" src="${BRAND[k].img}" alt="${brandDisplayName(k)}">`).join('')
+        + `<button class="models-add" data-ccs-add="1" data-tip="选择可用模型">+</button></span>`
       : '';
     const quota = quotaInline(key);
     return `
@@ -231,5 +233,74 @@ function renderCalendar(boxId, view, weeks) {
   box.innerHTML = `
     <div class="cal-stack" style="--cell:${CELL}px;--gap:${GAP}px">${rows}</div>`;
 
+  // ccs 槽位标题栏 + 按钮：innerHTML 整体替换后监听器不保留，每次重渲后重绑
+  box.querySelectorAll('[data-ccs-add]').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();   // 否则 document 的「点外关闭」当场关掉刚打开的浮层
+    openCcsPicker(btn);
+  }));
+
   if (boxId === 'view') document.getElementById('scale-note').textContent = '';
+}
+
+/* ---------- ccs 可用模型选择器 ----------
+   body 级单例浮层：点标题栏 + 按钮打开，按按钮位置 fixed 定位（clamp 进视口）。
+   浮层独立于日历 DOM——切换选中只重渲日历和浮层内容，浮层本身保持打开、不闪跳。
+   点浮层外 / Esc / 窗口 resize 关闭。 */
+let ccsPickerEl = null;
+function closeCcsPicker() {
+  if (!ccsPickerEl) return;
+  ccsPickerEl.remove();
+  ccsPickerEl = null;
+}
+function renderCcsPicker() {
+  if (!ccsPickerEl) return;
+  const sel = new Set(CCS_MODELS);
+  ccsPickerEl.innerHTML =
+    `<div class="ccs-picker-title">可用模型</div>`
+    + `<div class="ccs-picker-grid">` + Object.keys(BRAND).map(k =>
+      `<button class="ccs-pick${sel.has(k) ? ' on' : ''}" data-k="${k}" aria-pressed="${sel.has(k)}">`
+      + `<img src="${BRAND[k].img}" alt=""><span>${brandDisplayName(k)}</span></button>`).join('')
+    + `</div>`
+    + `<button class="btn ccs-picker-reset" data-tip="恢复默认三家">Reset</button>`;
+  for (const b of ccsPickerEl.querySelectorAll('.ccs-pick')) {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      const set = new Set(CCS_MODELS);
+      if (set.has(b.dataset.k)) set.delete(b.dataset.k);
+      else set.add(b.dataset.k);
+      // 展示顺序恒为 BRAND 表序，不随点选顺序乱跳
+      saveCcsModels(Object.keys(BRAND).filter(k => set.has(k)));
+      render();
+      renderCcsPicker();
+    });
+  }
+  ccsPickerEl.querySelector('.ccs-picker-reset').addEventListener('click', e => {
+    e.stopPropagation();
+    saveCcsModels(DEFAULT_CCS_MODELS);
+    render();
+    renderCcsPicker();
+  });
+}
+function openCcsPicker(anchor) {
+  if (ccsPickerEl) { closeCcsPicker(); return; }   // 再点 + 切关闭
+  ccsPickerEl = document.createElement('div');
+  ccsPickerEl.id = 'ccs-picker';
+  document.body.appendChild(ccsPickerEl);
+  renderCcsPicker();
+  // 右对齐到按钮右缘、下方展开；clamp 进视口
+  const r = anchor.getBoundingClientRect();
+  const w = ccsPickerEl.offsetWidth, h = ccsPickerEl.offsetHeight;
+  ccsPickerEl.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, r.right - w)) + 'px';
+  ccsPickerEl.style.top = Math.max(8, Math.min(window.innerHeight - h - 8, r.bottom + 6)) + 'px';
+}
+// 一次性绑定：点浮层外关闭、Esc 关闭、resize 关闭（fixed 定位窗口变了会飘）
+if (!window.__ccsPickerBound) {
+  window.__ccsPickerBound = true;
+  document.addEventListener('click', e => {
+    if (!ccsPickerEl) return;
+    if (ccsPickerEl.contains(e.target) || (e.target.closest && e.target.closest('[data-ccs-add]'))) return;
+    closeCcsPicker();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeCcsPicker(); });
+  window.addEventListener('resize', closeCcsPicker);
 }

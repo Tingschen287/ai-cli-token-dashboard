@@ -78,6 +78,7 @@ function applyData(payload) {
   firstDate = allDates[0];
   lastDate = allDates[allDates.length - 1];
   LAYOUT = getLayout();
+  CCS_MODELS = loadCcsModels();   // ccs 可用模型是用户状态，随刷新重算自愈
 }
 
 // 主屏固定 3 个月；半年/一年在长区间遮罩里看（lvState）

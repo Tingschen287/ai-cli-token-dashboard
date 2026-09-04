@@ -29,6 +29,35 @@ const BRAND = {
 const IS_DARK = matchMedia('(prefers-color-scheme: dark)').matches;
 const brandColor = b => (IS_DARK && b.dark) ? b.dark : b.color;
 
+/* ccs 槽位右上角「可用模型」：用户状态，存 localStorage[CCS_MODELS_KEY]，
+   内容是 BRAND key 数组（默认 MiniMax + GLM + DeepSeek）。加载自愈：
+   无存储/损坏/非数组回落默认，未知 key 剔除、去重；允许空数组（只留 + 号）。
+   派生状态用 let，applyData() 末尾重算（刷新整体换 DATA 的约定）。 */
+const CCS_MODELS_KEY = 'tdb-ccs-models-v1';
+const DEFAULT_CCS_MODELS = ['minimax', 'zai', 'deepseek'];
+function loadCcsModels() {
+  try {
+    const raw = localStorage.getItem(CCS_MODELS_KEY);
+    if (!raw) return [...DEFAULT_CCS_MODELS];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [...DEFAULT_CCS_MODELS];
+    return [...new Set(parsed.filter(k => typeof k === 'string' && BRAND[k]))];
+  } catch (err) { /* 存储损坏等同无存储，回落默认 */ return [...DEFAULT_CCS_MODELS]; }
+}
+let CCS_MODELS = loadCcsModels();
+function saveCcsModels(list) {
+  CCS_MODELS = [...new Set(list.filter(k => BRAND[k]))];
+  try {
+    localStorage.setItem(CCS_MODELS_KEY, JSON.stringify(CCS_MODELS));
+  } catch (err) { /* 隐私模式等写不进去就算了 */ }
+}
+/* 显示名：用户习惯的模型系列名优先（zai 在 AA 叫 Z AI，但大家都叫 GLM），
+   其余用 BRAND 的 AA creator 名，兜底 key 本身 */
+const BRAND_DISPLAY = { minimax: 'MiniMax', zai: 'GLM', deepseek: 'DeepSeek' };
+function brandDisplayName(key) {
+  return BRAND_DISPLAY[key] || (BRAND[key] && BRAND[key].name) || key;
+}
+
 /* 模型名 → 品牌：小写后按前缀命中（顺序即优先级），mmx 这类嵌入名用 includes */
 const BRAND_MATCH = [
   ['claude', 'anthropic'], ['anthropic', 'anthropic'],
