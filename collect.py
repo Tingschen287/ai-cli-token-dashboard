@@ -456,11 +456,36 @@ def collect():
     }
 
 
-def render(payload, template, target):
-    html = template.read_text(encoding="utf-8")
+# 前端按职责拆成多个静态文件，输出时再内联拼装——零构建、无 module 系统。
+# serve 模式每次请求现读现拼（改完刷新即生效）；render 产物仍是内联一切的单文件。
+CSS_FILE = "style.css"
+JS_FILES = ["brand.js", "data.js", "layout.js", "calendar.js", "charts.js", "app.js"]
+
+
+def build_html():
+    """读模板与拆分的静态资源，拼出未注数据的页面串（保留 /*__DATA__*/ 占位符）。"""
+    html = (HERE / "template.html").read_text(encoding="utf-8")
+    for marker in ("/*__STYLE__*/", "/*__APP__*/", "/*__DATA__*/null"):
+        if marker not in html:
+            sys.exit(f"模板缺少占位符 {marker}")
+    css_path = HERE / CSS_FILE
+    if not css_path.exists():
+        sys.exit(f"缺少前端文件: {css_path}")
+    parts = []
+    for name in JS_FILES:
+        f = HERE / name
+        if not f.exists():
+            sys.exit(f"缺少前端文件: {f}")
+        # 文件间加分隔注释兼作语句屏障，防行尾注释/缺少分号粘连
+        parts.append(f"/* ---- {name} ---- */\n" + f.read_text(encoding="utf-8"))
+    html = html.replace("/*__STYLE__*/", css_path.read_text(encoding="utf-8"))
+    html = html.replace("/*__APP__*/", "\n".join(parts))
+    return html
+
+
+def render(payload, target):
+    html = build_html()
     marker = "/*__DATA__*/null"
-    if marker not in html:
-        sys.exit(f"模板缺少数据占位符 {marker}: {template}")
     # </script> 会提前闭合内联脚本块，必须转义
     blob = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     target.write_text(html.replace(marker, blob), encoding="utf-8")
@@ -851,7 +876,6 @@ def serve(port, interval, host="127.0.0.1"):
     """
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    template = HERE / "template.html"
     snapshot = Snapshot(interval)
     threading.Thread(target=snapshot.loop, daemon=True).start()
     quota = QuotaPoller()
@@ -878,9 +902,9 @@ def serve(port, interval, host="127.0.0.1"):
                 self._send(json.dumps(with_quota(payload), ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             elif path in ("/", "/index.html", "/dashboard.html"):
-                html = template.read_text(encoding="utf-8")
+                # 每次请求现读现拼，开发时改完静态文件刷新即生效
                 blob = json.dumps(with_quota(snapshot.get()), ensure_ascii=False).replace("</", "<\\/")
-                self._send(html.replace("/*__DATA__*/null", blob).encode("utf-8"),
+                self._send(build_html().replace("/*__DATA__*/null", blob).encode("utf-8"),
                            "text/html; charset=utf-8")
             elif path == "/healthz":
                 self._send(b"ok", "text/plain")
@@ -927,7 +951,7 @@ def main():
         print(f"已导出 {args.json}")
         return
 
-    render(payload, HERE / "template.html", Path(args.out))
+    render(payload, Path(args.out))
 
     print(f"已生成 {args.out}  (扫描 {payload['scan']['seconds']} 秒)")
     for profile in payload["profiles"]:

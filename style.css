@@ -1,0 +1,309 @@
+:root {
+  /* Anthropic 风：暖米白底 + 近黑正文 + 暖灰次要文字 + 品牌橙点缀。
+     编辑排版质感，阴影收窄到几乎没有，靠留白和细线分层 */
+  --bg: #faf9f5;
+  --panel: #f4f2ec;
+  --border: #e3dfd6;
+  --text: #141413;
+  --muted: #73726c;
+  --faint: #ece9e1;
+  --empty: #e2ddd2;
+  --accent: #d97757;
+  --shadow: 0 1px 2px rgba(20,20,19,.04);
+  --radius: 12px;
+  --pad: 16px;
+  /* 标题衬线栈：编辑感的来源。正文/数字仍用 sans 保证可读 */
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
+           "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* 对应的暖黑，不是纯黑 */
+    --bg: #191817;
+    --panel: #201f1d;
+    --border: #35322e;
+    --text: #f0eee9;
+    --muted: #9b988f;
+    --faint: #272522;
+    --empty: #37332d;
+    --accent: #e0855f;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro SC", "SF Pro Text",
+        "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;              /* 一屏到底，不留滚动条 */
+}
+
+/* ---------- 骨架：整屏三段（顶栏 / 主区 / 无） ---------- */
+.app {
+  height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column;
+  gap: 12px; padding: 14px 18px 16px;
+}
+.stage {
+  flex: 1; min-height: 0;        /* min-height:0 是 flex 子项能收缩的前提 */
+  display: grid;
+  grid-template-columns: minmax(0, 70fr) minmax(0, 30fr);   /* 左日历/右排行 7:3，排行条不靠绝对宽度表达 */
+  gap: 14px;
+}
+.side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+/* 侧栏两块面板平分剩余高度：高度必须由布局决定，否则「几行放得下」
+   会依赖内容本身，形成先有鸡还是先有蛋 */
+.side > .panel { flex: 1; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px var(--pad);
+  box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar { display: flex; align-items: baseline; gap: 16px; flex: none; }
+/* 大标题用衬线细字重，是这套风格的标志 */
+h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
+     letter-spacing: -.01em; margin: 0; white-space: nowrap; }
+.topbar .total { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.topbar .total b { color: var(--text); font-weight: 600; font-size: 14px; font-variant-numeric: tabular-nums; }
+.topbar .spacer { flex: 1; }
+.sync { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sync b { color: var(--text); font-weight: 500; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font: inherit; font-size: 12px; color: var(--text);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  transition: background .15s, border-color .15s, opacity .15s;
+}
+.btn:hover:not(:disabled) { background: var(--faint); border-color: var(--muted); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.icon { padding: 6px 9px; }
+.btn.spin svg { animation: spin .8s linear infinite; }
+.btn.ok { color: #12833a; border-color: #12833a55; }
+.btn.warn { color: #b25000; border-color: #b2500055; }
+@media (prefers-color-scheme: dark) {
+  .btn.ok { color: #4ad07a; } .btn.warn { color: #ffa250; }
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn.spin svg { animation: none; } }
+.btn:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- 分段控件 ---------- */
+.seg { display: inline-flex; background: var(--faint); border-radius: 8px; padding: 2px; }
+.seg button {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font: inherit; font-size: 12px; padding: 4px 11px; border-radius: 6px;
+  transition: color .15s, background .15s;
+}
+.seg button[aria-pressed="true"] {
+  background: var(--panel); color: var(--text); font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08);
+}
+
+.panel-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; flex: none; margin-bottom: 10px;
+}
+.panel-head h2 { font-family: var(--serif); font-size: 16px; font-weight: 500; margin: 0; letter-spacing: 0; }
+.panel-head .note { color: var(--muted); font-size: 11px; }
+/* 合计卡：像 Daily/Weekly 那种带底色圆角的小块。
+   两行布局——主数字大字在上、副三项小字在下，纵向叠比横排窄很多，给右侧分段控件留空间。
+   统计窗口（如 2026-08-19）移到整卡 hover，默认不占视觉位。 */
+.metrics { display: inline-flex; align-items: baseline; gap: 8px;
+  background: var(--faint); border-radius: 8px; padding: 4px 10px;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.metrics .big { color: var(--text); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
+.metrics .big .lab { color: var(--muted); font-size: 10.5px; font-weight: 500; margin-left: 2px; }
+.metrics .sub { color: var(--muted); font-size: 10.5px; }
+.metrics .sub b { color: var(--text); font-weight: 600; font-size: 11px; }
+
+/* ---------- 左：日历 ---------- */
+.cal-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 月份轴在每个槽位内部（标题之下、格子之上），列宽与格子完全一致（repeat(N, CELL)），
+   标签打在包含每月 1 号的那一周列上。注意类名不能再用 mtrack——排行条的 .mtrack
+   是 flex，同名会把这个 grid 顶掉（2026-08 踩过） */
+.months {
+  display: flex; gap: 24px;
+  font-size: 10.5px; color: var(--muted); height: 15px; line-height: 15px;
+  flex: none; margin-bottom: 4px;
+}
+.maxis { display: grid; grid-auto-flow: column; gap: 3px; }
+.maxis span { white-space: nowrap; overflow: visible; }
+
+.cal-stack { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* 一行 1~2 个槽位（来源），槽位并排、同宽，格子尺寸全表统一 */
+.cal-row { display: flex; gap: 24px; flex: 1; min-height: 0; align-items: flex-start; }
+.cal-slot { display: flex; flex-direction: column; min-height: 0; flex: none; }
+.cal-title {
+  display: flex; align-items: center; gap: 8px; font-size: 13px;
+  font-weight: 600; height: 24px; flex: none; white-space: nowrap;
+}
+.cal-title .pname { flex: none; }
+/* 窗口大数字与副信息上提到行标题：口径跟随 activeWindow()，与排行、合计一致 */
+.cal-title .win { font-size: 15px; font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; flex: none; }
+.cal-title .winsub { font-size: 10px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums;
+                     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 标题右端：ccs 可用模型 logo（fill 写死品牌色）+ 范围总量小字 + 额度。
+   min-width:0 + overflow:hidden 兜底：窄屏截断右端，绝不让内容溢出压到格子 */
+.cal-title .tr { margin-left: auto; display: flex; align-items: center; gap: 8px;
+                 min-width: 0; overflow: hidden; }
+.cal-title .tr .models { display: flex; align-items: center; gap: 4px; flex: none; }
+.cal-title .tr .models .mlogo { width: 15px; height: 15px; border-radius: 3px; display: block; object-fit: contain; }
+.cal-title .range { color: var(--muted); font-weight: 400; font-size: 11px; white-space: nowrap; }
+/* 窄屏按优先级丢信息：先丢副信息（hover 大数字还能看到），再丢范围总量小字 */
+@media (max-width: 1250px) { .cal-title .winsub { display: none; } }
+@media (max-width: 1100px) {
+  .cal-title .range { display: none; }
+  .qinline .qbar { width: 44px; }
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.picon { width: 18px; height: 18px; border-radius: 4px; display: inline-block; flex: none; object-fit: contain; }
+
+.cal {
+  display: grid; grid-auto-flow: column;
+  grid-template-rows: repeat(7, var(--cell));
+  grid-auto-columns: var(--cell);       /* 格子固定大小正方形，不拉伸；列数随槽位宽度 */
+  justify-content: start;
+  gap: var(--gap);
+  flex: none;
+}
+.cal i {
+  width: var(--cell); height: var(--cell);
+  border-radius: max(2px, calc(var(--cell) / 4)); background: var(--empty);
+  display: block; cursor: default;
+}
+.cal i[data-v]:hover, .cal i.col-hot { outline: 1.5px solid var(--text); outline-offset: 1px; }
+
+/* 色阶缩略已按用户要求移除（2026-08：看格子本身就够直观，五行各一条太吵） */
+
+/* 额度在格子下方一行排开（用户要求保留这种方式）：不换行，窄屏截断不挤压格子。
+   额度是账号套餐的实时状态，不随 activeWindow() 变 */
+.cal-foot { display: flex; align-items: center; gap: 12px; flex: none; margin-top: 5px;
+            flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+.qinline { display: inline-flex; align-items: center; flex-wrap: nowrap;
+           column-gap: 10px; row-gap: 1px;
+           font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.qinline .qprov { display: inline-flex; align-items: center; gap: 6px; }
+
+.qinline .qsep { color: var(--border); }
+.qinline .qgrp { display: inline-flex; align-items: center; gap: 4px; }
+.qinline .qbar { width: 64px; height: 5px; border-radius: 3px; background: var(--faint); overflow: hidden; flex: none; }
+.qinline .qbar i { display: block; height: 100%; border-radius: 3px; }
+.qinline .qn { font-weight: 600; }
+.qinline .qerr { font-style: italic; }
+/* ccs 两家供应商四个窗口一行排开：供应商名粗体在前，5h/周进度条紧随其后 */
+.qinline-ccs { column-gap: 8px; }
+
+/* ---------- 右：排行表 ---------- */
+/* 放不下就滚动，不再按高度裁行数——裁掉的长尾用户根本看不到 */
+.rank { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px;
+        overflow-y: auto; overflow-x: hidden; padding-right: 4px; }
+.rank::-webkit-scrollbar { width: 6px; }
+.rank::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.rank::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+.rank { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+.rank-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; flex: none; }
+.rank-name { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank-val { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* 堆叠条：整条长度 = 相对榜首的占比，段长 = 该来源在这一项里的占比。
+   8px 是能看清分段边界的下限，再粗列表就笨重了 */
+.stack { grid-column: 1 / -1; display: flex; height: 8px; border-radius: 4px; overflow: hidden; min-width: 4px; }
+/* 占比极小的段（实测有 0.1px 的）既看不见也悬停不到，给个最低可见宽度；
+   flex-shrink 会把这点宽度从其他段按比例匀出来，总长仍然准确 */
+.stack span { display: block; height: 100%; cursor: default; min-width: 3px; }
+.stack span:hover { filter: brightness(1.25); }
+.empty { color: var(--muted); font-size: 11.5px; padding: 4px 0; }
+
+/* ---------- 按模型：品牌条 ----------
+   logo 在条前，条加高到 20px。条内放得下名字就白字放条内；
+   条太短放不下时，名字放条外右侧用普通文字色，保证短条也可读。 */
+.mrow { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; flex: none; }
+.mrow.no-logo { grid-template-columns: 1fr auto; }
+.mrow .mlogo { width: 15px; height: 15px; border-radius: 3px; display: block; object-fit: contain; }
+.mtrack { display: flex; align-items: center; min-width: 0; position: relative; }
+.mbar { height: 20px; border-radius: 6px; display: flex; align-items: center;
+        padding: 0 8px; box-sizing: border-box; min-width: 2px; flex: none; }
+.mbar span { color: #fff; font-size: 11px; font-weight: 500; line-height: 1;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mbar:hover { filter: brightness(1.08); }
+.mname-out { font-size: 11.5px; color: var(--text); margin-left: 7px;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 按项目用分段堆叠条恢复各模型分布：条长 = 占榜首比例，段长 = 该模型在此项中的占比。
+   名字浮层绝对定位在条上居左，条太短时改放条外。条高 20px 与按模型齐平。 */
+.mtrack .stack { grid-column: auto; height: 20px; border-radius: 6px;
+                 flex: none; min-width: 2px; }
+.mtrack .stack span { min-width: 0; }
+.mname-in  { position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+             color: #fff; font-size: 11px; font-weight: 500; line-height: 1;
+             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+             pointer-events: none; }
+
+/* 排行面板头部的 列表/占比 切换：复用 .seg 样式，只做小号版 */
+.rank-toggle { padding: 1px; }
+.rank-toggle button { font-size: 10.5px; padding: 2px 8px; }
+
+/* ---------- 占比饼图 ---------- */
+/* 单个大饼居中：名字直标在扇区里，具体占比看 hover，不再要图例 */
+.pie-wrap { display: flex; align-items: center; justify-content: center;
+            min-height: 0; flex: 1; }
+.pie-wrap svg { flex: none; display: block; }
+.pie-label { fill: #fff; font-size: 12px; font-weight: 600; text-anchor: middle;
+             dominant-baseline: central; pointer-events: none; }
+.pie-wrap path:hover, .pie-wrap circle:hover { filter: brightness(1.12); }
+
+/* ---------- 浮层 ---------- */
+/* 气泡与面板同一套词汇：panel 底 + 1px border + 12px 圆角 + 柔阴影，
+   深浅主题自动适配；不再用纯黑反色块（糊进深色底、在米白底太跳） */
+#tip {
+  position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
+  background: var(--panel); color: var(--text); font-size: 12px; line-height: 1.55;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius);
+  z-index: 50; white-space: nowrap;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+}
+#tip b { font-weight: 600; }
+#tip .sm { color: var(--muted); }
+#tip.plain { white-space: normal; max-width: 420px; }
+
+#info {
+  position: fixed; right: 18px; top: 52px; z-index: 60; width: min(520px, calc(100vw - 36px));
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 40px rgba(0,0,0,.18); padding: 14px 16px;
+  font-size: 12px; line-height: 1.65; color: var(--muted);
+}
+#info[hidden] { display: none; }
+#info b { color: var(--text); }
+#info div + div { margin-top: 6px; }
+code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: var(--text); }
+
+/* ---------- 长区间全屏遮罩 ----------
+   主屏只放 3 个月；半年/一年在这里占满整个视口，格子比挤在左栏时大得多 */
+#longview {
+  position: fixed; inset: 0; z-index: 70; background: var(--bg);
+  padding: 18px 22px; display: flex; flex-direction: column;
+}
+#longview[hidden] { display: none; }
+.lv-panel { flex: 1; min-height: 0; display: flex; flex-direction: column;
+            max-width: 1500px; width: 100%; margin: 0 auto; }
+#lv-close { margin-left: auto; }
+
+@media (max-width: 940px) {
+  .stage { grid-template-columns: 1fr; }
+  body { overflow: auto; }
+  .app { height: auto; min-height: 100vh; }
+  /* 单栏模式下日历槽位纵向堆叠（槽宽 JS 侧已按整宽算） */
+  .cal-row { flex-direction: column; }
+}
