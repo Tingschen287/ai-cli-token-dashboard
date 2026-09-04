@@ -6,5 +6,8 @@ dashboard.html
 __pycache__/
 *.py[cod]
 
+# 浏览器验收（Playwright MCP）的临时快照/截图
+.playwright-mcp/
+
 .DS_Store
 .venv/

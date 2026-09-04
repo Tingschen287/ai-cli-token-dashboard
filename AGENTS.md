@@ -11,18 +11,30 @@
 **技术栈**：零第三方依赖。
 
 - 后端：Python 3.8+，只用标准库（`http.server` / `sqlite3` / `urllib` / `json`）
-- 前端：单文件 `template.html`，原生 HTML/CSS/JS，无构建步骤、无 npm
+- 前端：原生 HTML/CSS/JS 按职责拆分（`template.html` 骨架 + `style.css` + 6 个 JS），
+  无构建步骤、无 npm——`collect.py` 输出时内联拼装回单文件
 
 ## 目录结构
 
 | 文件 | 角色 |
 |---|---|
-| `collect.py` | 看板唯一的 Python 文件（约 700 行）：扫描、聚合、渲染、HTTP 服务全部在此 |
+| `collect.py` | 看板唯一的 Python 文件：扫描、聚合、渲染、HTTP 服务全部在此 |
 | `cache_compare.py` | 独立小脚本：对比 K3 在 kimi 官方接入与 cc-switch 转发下的缓存命中率，复用 `collect.py` 的解析器 |
-| `template.html` | 前端模板（约 1100 行），CSS + JS 全部内联，`/*__DATA__*/null` 是数据占位符 |
+| `template.html` | 前端骨架模板（约 110 行）：HTML + 三个占位符 `/*__STYLE__*/`、`/*__APP__*/`、`/*__DATA__*/null` |
+| `style.css` | 全部样式（含末尾的编辑态样式一节） |
+| `brand.js` | BRAND 品牌表 + 配色派生（brandOf/modelColor/LOGOS），纯数据为主 |
+| `data.js` | 工具函数 + `applyData` 数据整形 + 时间窗口（activeWindow/windowTotals/winSub/renderMeta） |
+| `layout.js` | 布局状态（localStorage 读写/自愈/新来源落位）+ 编辑态全部交互（候补池/增删挪/调占比） |
+| `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
+| `charts.js` | 按模型/按项目排行 + 占比饼图 |
+| `app.js` | 入口：tooltip、render/renderAll、分段控件、长区间遮罩、口径说明、自动同步、刷新 |
 | `dashboard.html` | **生成物**，由 `collect.py` 渲染产出，内嵌真实项目名，已在 `.gitignore` 排除，**绝不提交** |
 | `cc-token-dashboard.service.example` | systemd 用户服务模板，两处 `%h/path/to/...` 需改成实际路径 |
 | `README.md` | 面向用户的完整文档（口径、布局、隐私、部署），改行为时同步更新 |
+
+JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**（`collect.py` 顶部
+`JS_FILES` 常量）：brand → data → layout → calendar → charts → app。跨文件调用
+的都是全局函数；新增文件要同步加进 `JS_FILES`。
 
 ## collect.py 内部结构
 
@@ -55,23 +67,36 @@
 - `serve()`：`http.server.ThreadingHTTPServer`，路由只有 `/api/data`、`/`、
   `/healthz`，其余 404。
 
-## template.html 前端约定
+## 前端约定
 
-- `let DATA = /*__DATA__*/null;` —— `render()`/`serve()` 把聚合 JSON 替换进这个
-  占位符；转义 `</` 防止提前闭合 script 块。
-- 刷新会整体换掉 `DATA`，所以派生结构在 `applyData()` 里重算，**不能做成顶层 const**。
-- 布局是一屏到底不滚动：三行分组（`ROW_LAYOUT`：cco 独占整宽 / codex+grok /
-  ccs+kimi），一行 1~2 个槽位并排；**格子是固定 17px 正方形（`CELL` 常量），
-  绝不拉伸**，列数随槽位宽度能放几列放几列（主屏不设上限，遮罩受 weeks 约束）；
-  窄于 940px 退回单栏、槽位纵向堆叠。月份轴在每个槽位内部（标题之下），
-  按各自的列几何对齐，不是全局共享轴。
+- 模板占位符：`template.html` 里有 `/*__STYLE__*/`（style.css 内容）、`/*__APP__*/`
+  （按 `JS_FILES` 顺序拼接的全部 JS）和 `let DATA = /*__DATA__*/null;` 三处。
+  `build_html()`（collect.py）完成前两处替换——serve 每次请求现读现拼（开发改完
+  刷新即生效），render 产物仍是内联一切的单文件；`render()`/`serve()` 再把聚合
+  JSON 替换进 DATA 占位符，转义 `</` 防止提前闭合 script 块。
+- 刷新会整体换掉 `DATA`，所以派生结构在 `applyData()` 里重算，**不能做成顶层 const**
+  （`PROFILES`/`byProfile`/`domModel`/`LAYOUT` 都是 `let`，applyData 末尾重算）。
+- 布局是一屏到底不滚动。**布局是用户状态不是代码常量**（layout.js）：
+  localStorage `tdb-layout-v1` 存 `{ rows: [[{k, w}]...], known: [...] }`，
+  `w` 是行内宽度权重（占比），一行 1~N 个槽位按权重分宽；`DEFAULT_LAYOUT`
+  是无存档时的默认（cco 独占 / codex+grok / ccs+kimi）。加载时自愈（剔除未知
+  key、去重、回收空行）；`known` 记录所有见过的来源——**用户移除进候补池的 key
+  仍在 known 里，不会被 `getLayout()` 的新来源自动落位复活**，只有 PROFILES 里
+  真正新增的来源才自动追加为新行。候补池不存储，派生 = 有数据来源 − 已放置。
+  编辑态（顶栏 Layout 按钮，`body.editing`）：− 徽标移除、HTML5 拖拽换位/开新行、
+  相邻槽位分隔条拖像素换算权重、Reset 恢复默认；覆盖层在 `render()` 末尾由
+  `applyEditChrome()` 重挂（autoSync 重渲不丢），槽位靠 `data-k` 定位。
+  **格子是固定 17px 正方形（`CELL` 常量），绝不拉伸**，列数随槽位宽度能放几列
+  放几列（主屏不设上限，遮罩受 weeks 约束）；窄于 940px 退回单栏、槽位纵向堆叠
+  （分隔条不显示）。月份轴在每个槽位内部（标题之下），按各自的列几何对齐，
+  不是全局共享轴。
   主屏 `state.weeks = 13` 只管右侧排行的统计窗口；半年/一年在 `#longview`
   全屏遮罩里，用独立的 `lvState` 渲染——`renderCalendar(boxId, view, weeks)`、
   `activeWindow(view, weeks)`、`windowTotals(view, weeks)` 都是参数化的，
-  主屏和遮罩各调各的，不要回退成读全局 state。
+  主屏和遮罩各调各的，不要回退成读全局 state；遮罩跟随同一份 LAYOUT。
 - 每个来源的结构：标题 + 月份轴 + 格子 + 额度行。额度在格子下方一行排开、
   **不换行**（用户明确要求保留这种方式）；没有色阶图例（用户明确不要）。
-- 品牌体系：`BRAND` 表（script 顶部）是唯一出处，18 家模型厂的
+- 品牌体系：`BRAND` 表（brand.js 顶部）是唯一出处，18 家模型厂的
   `{ color, img, dark? }` 全量内嵌——色值取自 [artificialanalysis.ai 模型页](https://artificialanalysis.ai/models)
   JSON 的 `creator.color`，logo 下载自 AA `/img/logos/` 后 base64 内嵌，完全离线。
   `BRAND_MATCH` 按模型名前缀命中品牌（顺序即优先级，`mmx` 用 includes）；
