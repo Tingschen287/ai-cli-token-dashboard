@@ -38,7 +38,7 @@ const BRAND_MATCH = [
   ['deepseek', 'deepseek'],
   ['qwen', 'alibaba'], ['qwq', 'alibaba'],
   ['gemini', 'google'],
-  ['llama', 'meta'],
+  ['llama', 'meta'], ['muse', 'meta'],
   ['mistral', 'mistral'], ['mixtral', 'mistral'], ['codestral', 'mistral'],
   ['cohere', 'cohere'], ['command', 'cohere'],
 ];
