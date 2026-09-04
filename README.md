@@ -5,7 +5,7 @@
 
 一屏看完：日历热力图 + 按模型 / 按项目的用量排行，随时间窗口联动。
 
-目前覆盖五个来源，都可以在 `collect.py` 顶部的 `PROFILES` 里增删：
+目前覆盖六个来源，都可以在 `collect.py` 顶部的 `PROFILES` 里增删：
 
 | key | 看板显示名 | 默认目录 | 说明 |
 |---|---|---|---|
@@ -14,6 +14,7 @@
 | `codex` | ChatGPT | `~/.codex` | Codex CLI |
 | `ccs` | CC-Switch | `~/.claude` | Claude Code 经 CC-Switch 走第三方 |
 | `grok` | Grok | `~/.grok` | Grok CLI |
+| `oc` | OpenCode | `~/.local/share/opencode` | OpenCode（SQLite 存储） |
 
 > **不消耗 token**：只读本地 jsonl 文件，不联网、不调 API。刷新多少次都是零费用。
 > 单次全量扫描约 1.2 秒 / 28MB 内存；之后走文件级增量缓存，只重读 mtime 变过的
@@ -116,6 +117,12 @@ Python，所以按钮必须有个后端替它去扫描。服务只绑 `127.0.0.1
 取 `info.last_token_usage`（每次 LLM 调用的增量；`total_token_usage` 是累计值不取）。
 模型和 cwd 在同文件的 session_meta / turn_context 行。事件里还自带 `rate_limits`
 （账号额度快照），codex 行的额度显示就从这里白捡，不联网。
+
+**opencode** —— 整个存储是一个 SQLite 库 `<dir>/opencode.db`（WAL 模式）。
+`message` 表的 `data` JSON 里 `role=assistant` 的条带
+`tokens{input,output,reasoning,cache{read,write}}`、`modelID` 和 unix 毫秒时间戳，
+项目取 `session.directory`。实测 `input` 不含缓存读（同 Claude 口径不用减）。
+`cost` 字段是 USD 实估值，和 grok 一样以 ≈$ 名义值展示。
 
 `cache_compare.py` 复用 kimi/claude 两个解析器：对比 K3 在 kimi code cli 官方接入与
 claude code + cc-switch 转发下的 prompt 缓存命中率，
@@ -220,18 +227,19 @@ mistral 等开箱即有），`ccs` 是转发层、AA 无条目，用自有 logo 
    `session+prompt_id+模型`，实测 0 重复，数据天然干净；Kimi 每 turn 一条
    `usage.record`、Codex 每次调用一条 `token_count`，都天然不重复，不用去重。
 3. **三种时间戳** —— Claude / Codex 是 UTC ISO 串（尾部 Z），Grok 是 unix 秒，
-   Kimi 是 unix **毫秒**，都要转本机时区（kimi 还要 /1000）。不转的话本地晚上的
-   会话会被算到第二天，热力图整体错位一格。
+   Kimi 和 OpenCode 是 unix **毫秒**，都要转本机时区（毫秒还要 /1000）。不转的话
+   本地晚上的会话会被算到第二天，热力图整体错位一格。
 4. **零计量记录跳过** —— 部分记录 usage 全为 0（流式占位），计入会污染活动天数。
 5. **Codex 取增量不取累计** —— `token_count` 里的 `total_token_usage` 是会话
    累计值，直接用会重复计数；必须取 `last_token_usage`（每次调用的增量）。
 
 ## 关于费用
 
-只有 Grok 记了 `costUsdTicks`。看板按 **1e-9 USD/tick 推定**折算，标为"名义"值——
+Grok 记了 `costUsdTicks`，看板按 **1e-9 USD/tick 推定**折算，标为"名义"值——
 该单位未经官方文档确认，只是量级自洽（平均约 $4.6/M token，落在 frontier 模型
 合理区间）。而且 `~/.grok/models_cache.json` 显示 `auth_method: session`，是订阅
-登录，这个金额不等于实际扣费。
+登录，这个金额不等于实际扣费。OpenCode 的 `cost` 字段是它按 provider 报价算的
+USD 实估值，同样只作参考——你的实际套餐/免费额度它并不知道。
 
 Claude 侧完全无法算钱：官方账号是订阅制；第三方经 CC-Switch 代理，真实计费在代理
 侧，本地 jsonl 只有 token 数没有单价，且 MiniMax / GLM / k3 价格各不相同。

@@ -44,9 +44,13 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   `parse_grok_file`（`<dir>/sessions/*/*/updates.jsonl`）、
   `parse_kimi_file`（wire.jsonl 的 `usage.record`，time 是 unix 毫秒）、
   `parse_codex_file`（rollout-*.jsonl 的 `token_count`，取 `last_token_usage`
-  增量；模型/cwd 在同文件 session_meta/turn_context 行）。
-- 文件级增量缓存 `_CACHE`：按 `(mtime_ns, size)` 签名判断，只重读变过的文件。
-  会话记录 append-only，这是安全的。
+  增量；模型/cwd 在同文件 session_meta/turn_context 行）、
+  `parse_opencode_file`（整个存储是单个 SQLite 库 `opencode.db`，message.data
+  JSON 的 tokens 字段；实测 input 不含 cache read；cost 是 USD 实估值折 cost_ticks）。
+- 文件级增量缓存 `_CACHE`：按 `_sig_of(path)` 签名判断，只重读变过的文件。
+  会话记录 append-only，这是安全的。SQLite 是例外：WAL 模式下新数据先进
+  `-wal` 文件、主库 mtime 滞后到 checkpoint，所以 `.db` 的签名要把 `-wal`
+  的 mtime/size 并进去，否则进行中的 opencode 会话漏刷新。
 - `collect()`：聚合产出 `daily` / `models` / `projects`（都带 date 维度，供前端
   按时间窗口重新聚合；`projects` 还带 model 维度——按项目面板的分段是模型）和
   `profiles` 总量。codex 的额度（rollout 文件自带的 `rate_limits`）在扫描时
@@ -101,7 +105,8 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   JSON 的 `creator.color`，logo 下载自 AA `/img/logos/` 后 base64 内嵌，完全离线。
   `BRAND_MATCH` 按模型名前缀命中品牌（顺序即优先级，`mmx` 用 includes）；
   模型名没命中时按 `PROFILE_BRAND` 用来源兜底（cco→anthropic、kimi→kimi、
-  codex→openai、grok→xai；ccs 是转发层无兜底）。**以后出新模型不用改代码，
+  codex→openai、grok→xai；ccs 是转发层、oc 是工具，都无兜底，回落行色
+  `COLORS[key]`，modelLogo 回落本来源行首标 `LOGOS[key]`）。**以后出新模型不用改代码，
   AA 上新厂时 BRAND 补一行 + BRAND_MATCH 补一条前缀**。
   行色 `COLORS` 直接从 `brandColor(BRAND.x)` 派生（格子、排行条、饼图全联动）；
   **格子按当日增量最高的主力模型着色**（`applyData` 里从 `DATA.models` 派生
@@ -110,8 +115,9 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   `dark` 是深色主题替代色（只有 openai 纯黑会糊进 `#191817` 底色需要，
   反为近白 `#E8E6E1`；定义时按 `matchMedia` 换值，`shade()` 只认 hex）。
   ccs 行色用星爆 logo 次主色青 `#50A0A0`（主色橙与 cco 撞，弃用），
-  行首 logo 也是自有图（品牌表外唯一静态内嵌），标题右侧只列当前可用模型
-  （MiniMax + GLM + DeepSeek，kimi 已迁出）。
+  行首 logo 也是自有图，标题右侧只列当前可用模型
+  （MiniMax + GLM + DeepSeek，kimi 已迁出）。oc 同理是自有绿 `#43A047` +
+  绿底白 `<>` 自有标（OpenCode 是工具不是模型厂，AA 无条目）。
   注意 AA 的 anthropic 标是黑字 AI 字母砖、xai 标是黑底白色掠影（SpaceXAI），
   不是 Claude 星标和 grok 黑方标——对齐 AA 是用户明确要求。
 - 服务模式检测：能 `fetch('/api/data')` 就是服务模式，否则刷新按钮降级为提示
@@ -140,21 +146,23 @@ feat/fix/style/refactor）。
 1. **主指标 = 增量 token** = 非缓存输入 + 输出 + 缓存写入。`cache_read` 单列，
    不参与着色（它占总量九成以上）。
 2. **跨工具口径对齐**：Grok 的 `inputTokens` **包含** `cachedReadTokens`，Codex 的
-   `input_tokens` **包含** `cached_input_tokens`，Claude 的不包含——解析 grok/codex
-   时必须减掉，否则虚高一个数量级。
+   `input_tokens` **包含** `cached_input_tokens`，Claude 和 OpenCode 的不包含
+   （opencode 已实测 86/86 条验证）——解析 grok/codex 时必须减掉，否则虚高一个数量级。
 3. **去重方式不同**：Claude 按 `message.id`（流式中间态重复严重，且重复可跨文件，
    所以去重放在 `collect()` 上层而非解析器内）；Grok 按 `session+prompt_id+模型`；
-   Kimi（每 turn 一条）和 Codex（每次调用一条）天然不重复。
+   Kimi（每 turn 一条）、Codex（每次调用一条）和 OpenCode（每条 message 一行、
+   整库全量重读）天然不重复。
 4. **时间戳统一转本机时区**（`_local_date`）：Claude / Codex 是 UTC ISO 串，Grok
-   是 unix 秒，Kimi 是 unix 毫秒（/1000）。不转的话本地晚上的会话被算到第二天，
-   热力图错位。
+   是 unix 秒，Kimi 和 OpenCode 是 unix 毫秒（/1000）。不转的话本地晚上的会话
+   被算到第二天，热力图错位。
 5. usage 全为 0 的记录跳过（流式占位）。
 6. claude 的 glob 是 `projects/**/*.jsonl`（两层），**不能改成一层**——subagent
    会话在 `subagents/agent-*.jsonl`，漏掉会整体丢失这部分用量。
 7. **Codex 取 `last_token_usage`（增量），不取 `total_token_usage`（会话累计）**，
    否则重复计数。
-8. 费用：只有 grok 记 `costUsdTicks`，按 1e-9 USD/tick 推定，是**名义**值。
-   这是消耗看板，不是账单看板。
+8. 费用：grok 记 `costUsdTicks`（按 1e-9 USD/tick 推定，**名义**值）；opencode 的
+   `cost` 字段是它按 provider 报价算的 USD 实估值，同样只作参考。其余来源没有
+   费用字段。这是消耗看板，不是账单看板。
 
 ## 安全与隐私
 
