@@ -173,9 +173,14 @@ function renderCalendar(boxId, view, weeks) {
       }
     }
 
+    // 格子铺到本周周六（未来日期也出空格、tooltip 显示 no activity）：当前周列
+    // 补全成完整一列，布局规整。月份轴仍按 end 算——当前周列早已存在，不新增列
+    const gridEnd = new Date(end.getTime());
+    gridEnd.setDate(gridEnd.getDate() + (6 - gridEnd.getDay()));
+
     const cells = [];
     let colIndex = -1, run = 0;
-    for (let t = start.getTime(); t <= end.getTime(); t += DAY) {
+    for (let t = start.getTime(); t <= gridEnd.getTime(); t += DAY) {
       const d = new Date(t), dk = iso(d);   // dk：日期键，别盖住槽位的 profile key
       if (d.getDay() === 0) colIndex++;
       const row = bucket[keyOf(dk)];
