@@ -15,6 +15,9 @@
   /* 标题衬线栈：编辑感的来源。正文/数字仍用 sans 保证可读 */
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia,
            "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", serif;
+  /* 顶栏一排控件的统一高度。按钮、带宽胶囊、总账卡各自的内容字号不同，
+     光靠 padding 对不齐（baseline 对齐还会把行盒撑高），锁死盒高最省事 */
+  --ctl-h: 31px;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -69,27 +72,36 @@ body {
   min-height: 0;
 }
 
-/* ---------- 顶栏 ---------- */
-.topbar { display: flex; align-items: baseline; gap: 16px; flex: none; }
+/* ---------- 顶栏 ----------
+   三列网格：标题 | 全期总账 | 其余控件。左右两列都是 1fr，中间列因此落在
+   顶栏真正的中线上——flex + spacer 只能让它居中于「剩余空间」，标题一长就偏。
+   垂直方向全部 center 对齐：标题是 26px 衬线、两张卡是 12px，baseline 对齐
+   会让卡片吊在标题基线上，看着像没对齐。 */
+.topbar { display: grid; grid-template-columns: 1fr auto 1fr;
+          align-items: center; gap: 16px; flex: none; }
+.topbar > h1 { justify-self: start; }
+.topbar-right { display: flex; align-items: center; gap: 16px; justify-self: end; }
 /* 大标题用衬线细字重，是这套风格的标志 */
 h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
      letter-spacing: -.01em; margin: 0; white-space: nowrap; }
 /* 全期总账：和面板里那张合计卡（.metrics）同一套排版，见下方「合计卡」一节。
    两处共用 .big / .lab / .sub 三个类，改样式要一起改 */
 .topbar .total { display: inline-flex; align-items: baseline; gap: 8px;
-  background: var(--faint); border-radius: 8px; padding: 4px 10px;
+  background: var(--faint); border-radius: 8px; padding: 6px 12px;
+  border: 1px solid transparent;   /* 不画线，只为和右侧控件凑齐同样的盒高 */
+  height: var(--ctl-h); box-sizing: border-box; line-height: 18px;
   font-variant-numeric: tabular-nums; white-space: nowrap; cursor: default; }
 .topbar .total .big { color: var(--text); font-weight: 600; font-size: 15px; letter-spacing: -.01em; }
 .topbar .total .big .lab { color: var(--muted); font-size: 10.5px; font-weight: 500; margin-left: 2px; }
 .topbar .total .sub { color: var(--muted); font-size: 10.5px; }
 .topbar .total .sub b { color: var(--text); font-weight: 600; font-size: 11px; }
-.topbar .spacer { flex: 1; }
 
 .btn {
   display: inline-flex; align-items: center; gap: 6px; flex: none;
   font: inherit; font-size: 12px; color: var(--text);
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 12px; cursor: pointer;
+  height: var(--ctl-h); box-sizing: border-box;
   transition: background .15s, border-color .15s, opacity .15s;
 }
 .btn:hover:not(:disabled) { background: var(--faint); border-color: var(--muted); }
@@ -312,7 +324,10 @@ code { background: var(--faint); padding: 1px 5px; border-radius: 4px; font-size
   /* 单栏模式下日历槽位纵向堆叠（槽宽 JS 侧已按整宽算） */
   .cal-row { flex-direction: column; }
   /* 顶栏放不下就先舍全期总账：它是不随操作变的锚点数字，面板里的合计卡
-     仍在，右边那几个按钮才是必须够得着的 */
+     仍在，右边那几个按钮才是必须够得着的。
+     注意要连 grid 模板一起改成两列——display:none 的元素不再占 grid 位，
+     光藏不改模板的话右侧那组会掉进中间列，贴不到右边缘 */
+  .topbar { grid-template-columns: 1fr auto; }
   .topbar .total { display: none; }
 }
 
@@ -400,11 +415,13 @@ body.editing.dragging .row-drop { display: flex; }
 
 /* ---------- VPS 带宽 ----------
    顶栏胶囊 + 点开的明细卡。胶囊高度和 .btn 对齐，免得顶栏参差 */
+/* 间距交给 .topbar-right 的 gap，这里不要再自带 margin。
+   垂直 padding 和 line-height 都跟 .btn 走——三种控件排成一行，谁矮一截都很显眼 */
 .vps-pill {
   display: inline-flex; align-items: center; gap: 6px;
-  margin-left: 10px; padding: 4px 10px;
+  padding: 6px 12px; height: var(--ctl-h); box-sizing: border-box;
   background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
-  color: var(--text); font: inherit; font-size: 12px; line-height: 1.4;
+  color: var(--text); font: inherit; font-size: 12px;
   cursor: pointer; transition: border-color .15s, background .15s;
 }
 .vps-pill:hover { border-color: var(--muted); }
@@ -413,8 +430,10 @@ body.editing.dragging .row-drop { display: flex; }
 .vps-den { color: var(--muted); font-weight: 400; }
 .vps-ring { flex: none; }
 
+/* 跟着胶囊走：胶囊在顶栏右侧，弹层也从右边缘拉出来，不然点右上角却从
+   左下角弹出，视线要横跨整屏 */
 #vps-pop {
-  position: fixed; left: 18px; top: 52px; z-index: 60;
+  position: fixed; right: 18px; top: 52px; z-index: 60;
   width: min(620px, calc(100vw - 36px));
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: 0 8px 40px rgba(0,0,0,.18); padding: 16px 18px;

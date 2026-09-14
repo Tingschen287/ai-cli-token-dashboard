@@ -16,32 +16,35 @@
 <div class="app">
   <header class="topbar">
     <h1>Token Activity</h1>
+    <!-- 三列网格：标题靠左、全期总账压正中、其余靠右。左右两列都是 1fr，
+         中间列才真的落在顶栏中线上（换成 flex + spacer 只能居中于剩余空间） -->
     <span class="total" id="total"></span>
-    <!-- VPS 带宽胶囊：没配 vps.local.json 时整块不出现（JS 里保持 hidden）。
-         点开是每日分账号的柱状图，见 vps.js -->
-    <button class="vps-pill" id="vps-btn" hidden aria-expanded="false">
-      <svg class="vps-ring" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
-        <circle cx="10" cy="10" r="8" fill="none" stroke="var(--empty)" stroke-width="3.4"/>
-        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="3.4"
-                stroke-linecap="round" transform="rotate(-90 10 10)"
-                id="vps-ring-arc" stroke-dasharray="0 999"/>
-      </svg>
-      <span id="vps-pill-text"></span>
-    </button>
-    <span class="spacer"></span>
-    <!-- 距上次同步多久，直接长在刷新按钮里：平时只有倒计时，
-         点下去才临时换成 Scanning / Updated 之类的状态字 -->
-    <button class="btn" id="refresh" data-tip="点击立即重新扫描（快捷键 r）">
-      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-        <path d="M13.6 8a5.6 5.6 0 1 1-1.7-4" fill="none" stroke="currentColor"
-              stroke-width="1.7" stroke-linecap="round"/>
-        <path d="M13.4 1.2v3.1h-3.1" fill="none" stroke="currentColor"
-              stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-      <span id="refresh-text"></span>
-    </button>
-    <button class="btn" id="layout-btn" data-tip="编辑布局：点 − 移除到候补池，拖动换位，拖分隔条调占比">Layout</button>
-    <button class="btn icon" id="info-btn" aria-label="Methodology" data-tip="Methodology">ⓘ</button>
+    <div class="topbar-right">
+      <!-- VPS 带宽胶囊：没配 vps.local.json 时整块不出现（JS 里保持 hidden）。
+           点开是每日分账号的柱状图，见 vps.js -->
+      <button class="vps-pill" id="vps-btn" hidden aria-expanded="false">
+        <svg class="vps-ring" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+          <circle cx="10" cy="10" r="8" fill="none" stroke="var(--empty)" stroke-width="3.4"/>
+          <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="3.4"
+                  stroke-linecap="round" transform="rotate(-90 10 10)"
+                  id="vps-ring-arc" stroke-dasharray="0 999"/>
+        </svg>
+        <span id="vps-pill-text"></span>
+      </button>
+      <!-- 距上次同步多久，直接长在刷新按钮里：平时只有倒计时，
+           点下去才临时换成 Scanning / Updated 之类的状态字 -->
+      <button class="btn" id="refresh" data-tip="点击立即重新扫描（快捷键 r）">
+        <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+          <path d="M13.6 8a5.6 5.6 0 1 1-1.7-4" fill="none" stroke="currentColor"
+                stroke-width="1.7" stroke-linecap="round"/>
+          <path d="M13.4 1.2v3.1h-3.1" fill="none" stroke="currentColor"
+                stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span id="refresh-text"></span>
+      </button>
+      <button class="btn" id="layout-btn" data-tip="编辑布局：点 − 移除到候补池，拖动换位，拖分隔条调占比">Layout</button>
+      <button class="btn icon" id="info-btn" aria-label="Methodology" data-tip="Methodology">ⓘ</button>
+    </div>
   </header>
 
   <div class="stage">

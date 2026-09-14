@@ -106,11 +106,18 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   全屏遮罩里，用独立的 `lvState` 渲染——`renderCalendar(boxId, view, weeks)`、
   `activeWindow(view, weeks)`、`windowTotals(view, weeks)` 都是参数化的，
   主屏和遮罩各调各的，不要回退成读全局 state；遮罩跟随同一份 LAYOUT。
-- 顶栏两张数字卡共用 `.big` / `.lab` / `.sub` 三个类：左边 `#total` 是全期总账
-  （不随 tab 变），面板里 `#metrics` 是当前窗口合计。**改其中一个的排版要两个一起改**，
-  它们并排出现，样式一散就露馅。次要信息（`#total` 的日期范围、`#metrics` 的统计
-  窗口）都收在 hover 里，卡面上只留两个数。窄屏（≤940px）`#total` 直接隐藏——
-  顶栏放不下时先舍它，右边的按钮才是必须够得着的。
+- 顶栏是 `1fr auto 1fr` 三列网格：标题靠左、`#total` 压正中、`.topbar-right`
+  （带宽胶囊 + 三个按钮）靠右。**中间列要真的落在中线上就得用网格**——flex
+  加 spacer 只能让它居中于「剩余空间」，标题一长就偏。窄屏（≤940px）`#total`
+  隐藏，此时**必须连模板一起改成两列**：`display:none` 的元素不再占网格位，
+  光藏不改模板的话右侧那组会掉进中间列，贴不到右边缘。
+- 顶栏一排控件（`.btn` / `.vps-pill` / `#total`）高度统一锁在 `--ctl-h`。三者
+  内容字号不同，靠 padding 对不齐，`#total` 内部还是 baseline 对齐会额外撑高
+  行盒——直接锁盒高最省事，改一处全跟着走。
+- 顶栏两张数字卡共用 `.big` / `.lab` / `.sub` 三个类：`#total` 是全期总账
+  （不随 tab 变），面板里 `#metrics` 是当前窗口合计。**改其中一个的排版要两个一起改**。
+  次要信息（`#total` 的日期范围、`#metrics` 的统计窗口）都收在 hover 里，
+  卡面上只留两个数。
 - 「距上次同步多久」长在刷新按钮里，只有数字没有字。`statusUntil` 是这套的关键：
   点刷新后按钮临时显示 Scanning / Updated / Need server，这段时间 `tickSync()`
   必须让位，否则每秒的倒计时会把状态字冲掉。`flash()` 负责设置和清除它。
