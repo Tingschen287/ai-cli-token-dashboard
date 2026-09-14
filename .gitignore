@@ -6,6 +6,9 @@ dashboard.html
 # VPS 连接配置：含自己的服务器地址。已被上面的 *.json 覆盖，这里显式重申一遍
 vps.local.json
 
+# Coding Plan 查询凭据：仅供本机后端读取，禁止提交
+coding-plans.local.json
+
 __pycache__/
 *.py[cod]
 
