@@ -129,11 +129,18 @@ function winSub(d) {
 function renderMeta() {
   const { win, acc } = windowTotals();
 
-  // 顶栏固定给全期总账，作为不随 tab 变动的锚点
+  // 顶栏固定给全期总账，作为不随 tab 变动的锚点。
+  // 排版沿用面板里那张合计卡（.metrics）：主数字大字、单位小字跟在后面，
+  // 次要项缩到一半大小；日期范围移到 hover，默认不占视觉位。
   const lifeIncr = PROFILES.reduce((s, p) => s + p.incr, 0);
   const lifeRead = PROFILES.reduce((s, p) => s + p.cache_read, 0);
-  document.getElementById('total').innerHTML =
-    `lifetime <b>${human(lifeIncr)}</b> · cache read ${human(lifeRead)} · ${firstDate} → ${lastDate}`;
+  const total = document.getElementById('total');
+  total.innerHTML =
+    `<span class="big">${human(lifeIncr)}<span class="lab">lifetime</span></span>`
+    + `<span class="sub"><b>${human(lifeRead)}</b> cache read</span>`;
+  total.dataset.span = `${firstDate} → ${lastDate}`;
+  total.dataset.li = fmt(lifeIncr);
+  total.dataset.lr = fmt(lifeRead);
 
   const totalIncr = PROFILES.reduce((s, p) => s + acc[p.key].incr, 0);
   const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);

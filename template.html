@@ -29,15 +29,16 @@
       <span id="vps-pill-text"></span>
     </button>
     <span class="spacer"></span>
-    <span class="sync" id="sync"></span>
-    <button class="btn" id="refresh">
+    <!-- 距上次同步多久，直接长在刷新按钮里：平时只有倒计时，
+         点下去才临时换成 Scanning / Updated 之类的状态字 -->
+    <button class="btn" id="refresh" data-tip="点击立即重新扫描（快捷键 r）">
       <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
         <path d="M13.6 8a5.6 5.6 0 1 1-1.7-4" fill="none" stroke="currentColor"
               stroke-width="1.7" stroke-linecap="round"/>
         <path d="M13.4 1.2v3.1h-3.1" fill="none" stroke="currentColor"
               stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <span id="refresh-text">Refresh</span>
+      <span id="refresh-text"></span>
     </button>
     <button class="btn" id="layout-btn" data-tip="编辑布局：点 − 移除到候补池，拖动换位，拖分隔条调占比">Layout</button>
     <button class="btn icon" id="info-btn" aria-label="Methodology" data-tip="Methodology">ⓘ</button>

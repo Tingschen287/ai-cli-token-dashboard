@@ -22,6 +22,16 @@ document.addEventListener('mouseover', e => {
     placeTip(mc);
     return;
   }
+  // 顶栏全期总账：日期范围和精确值都收在 hover 里，卡面上只留两个数
+  const tc = e.target.closest('#total');
+  if (tc && tc.dataset.span) {
+    tip.classList.remove('plain');
+    tip.innerHTML = `<b>${tc.dataset.span}</b>`
+      + `<br>incr <b>${tc.dataset.li}</b>`
+      + `<br>cache read <b>${tc.dataset.lr}</b>`;
+    placeTip(tc);
+    return;
+  }
   // 占比饼图的扇区：显示这个名字的总量和占比
   const arc = e.target.closest('.pie-wrap path, .pie-wrap circle');
   if (arc) {
@@ -83,7 +93,8 @@ document.addEventListener('mouseover', e => {
 });
 document.addEventListener('mouseout', e => {
   if (!e.target.closest('#metrics') && !e.target.closest('.cal i') && !e.target.closest('.stack span')
-      && !e.target.closest('.mbar') && !e.target.closest('.pie-wrap') && !e.target.closest('[data-tip]')) return;
+      && !e.target.closest('.mbar') && !e.target.closest('.pie-wrap') && !e.target.closest('[data-tip]')
+      && !e.target.closest('#total')) return;
   tip.style.opacity = 0;
   clearColumn();
 });
@@ -201,10 +212,19 @@ async function autoSync() {
   } catch (err) { /* 离线打开时必然失败，忽略 */ }
 }
 
-function tickSync() {
+// 距上次同步多久。长在刷新按钮里，所以只留数字——「updated … ago」那几个词
+// 在一个刷新按钮上是废话。statusUntil 之前是 Scanning/Updated 这类临时状态，
+// 那段时间不要把状态字冲掉。
+let statusUntil = 0;
+
+function syncLabel() {
   const sec = Math.round((Date.now() - lastSync) / 1000);
-  document.getElementById('sync').innerHTML =
-    sec < 90 ? `updated <b>${sec}</b>s ago` : `updated <b>${Math.round(sec / 60)}</b>m ago`;
+  return sec < 90 ? `${sec}s` : `${Math.round(sec / 60)}m`;
+}
+
+function tickSync() {
+  if (Date.now() < statusUntil) return;
+  document.getElementById('refresh-text').textContent = syncLabel();
 }
 setInterval(autoSync, 60000);
 setInterval(tickSync, 1000);
@@ -221,10 +241,12 @@ let busy = false, resetTimer = null;
 function flash(cls, text, ms) {
   btn.classList.add(cls);
   btnText.textContent = text;
+  statusUntil = Date.now() + ms;      // 这段时间内 tickSync 让位
   clearTimeout(resetTimer);
   resetTimer = setTimeout(() => {
     btn.classList.remove('ok', 'warn');
-    btnText.textContent = 'Refresh';
+    statusUntil = 0;
+    tickSync();                        // 状态字退场，立刻换回倒计时
   }, ms);
 }
 
@@ -235,6 +257,7 @@ async function doRefresh() {
   btn.classList.add('spin');
   btn.classList.remove('ok', 'warn');
   btnText.textContent = 'Scanning';
+  statusUntil = Date.now() + 60000;    // 扫描期间别被倒计时冲掉，flash 会接手重置
   try {
     // force=1 让服务端立刻重扫，不等下一个定时周期
     const res = await fetch('/api/data?force=1', { cache: 'no-store' });

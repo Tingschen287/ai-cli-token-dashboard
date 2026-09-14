@@ -27,7 +27,7 @@
 | `layout.js` | 布局状态（localStorage 读写/自愈/新来源落位）+ 编辑态全部交互（候补池/增删挪/调占比） |
 | `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
 | `charts.js` | 按模型/按项目排行 + 占比饼图 |
-| `vps.js` | VPS 带宽胶囊 + 点开的每日分账号堆叠柱状图（可选功能，没配就整块不出现） |
+| `vps.js` | VPS 带宽胶囊 + 点开的每日分账号堆叠柱状图（可选功能，没配就整块不出现）。配色两套：`VPS_TONES` 是按用量百分比走的四档电量色（绿→金→橙→红），`VPS_PALETTE` 是按账号分色的暖色盘，都刻意留在暖色系里 |
 | `app.js` | 入口：tooltip、render/renderAll、分段控件、长区间遮罩、口径说明、自动同步、刷新 |
 | `vps_probe.py` | 在 VPS 上就地聚合流量的脚本。**不部署到远端**，由 `collect.py` 通过 SSH stdin 喂给 `python3 -` 执行 |
 | `vps.local.json.example` | VPS 连接配置模板；实际的 `vps.local.json` 含服务器地址，已在 `.gitignore` 排除 |
@@ -106,6 +106,14 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   全屏遮罩里，用独立的 `lvState` 渲染——`renderCalendar(boxId, view, weeks)`、
   `activeWindow(view, weeks)`、`windowTotals(view, weeks)` 都是参数化的，
   主屏和遮罩各调各的，不要回退成读全局 state；遮罩跟随同一份 LAYOUT。
+- 顶栏两张数字卡共用 `.big` / `.lab` / `.sub` 三个类：左边 `#total` 是全期总账
+  （不随 tab 变），面板里 `#metrics` 是当前窗口合计。**改其中一个的排版要两个一起改**，
+  它们并排出现，样式一散就露馅。次要信息（`#total` 的日期范围、`#metrics` 的统计
+  窗口）都收在 hover 里，卡面上只留两个数。窄屏（≤940px）`#total` 直接隐藏——
+  顶栏放不下时先舍它，右边的按钮才是必须够得着的。
+- 「距上次同步多久」长在刷新按钮里，只有数字没有字。`statusUntil` 是这套的关键：
+  点刷新后按钮临时显示 Scanning / Updated / Need server，这段时间 `tickSync()`
+  必须让位，否则每秒的倒计时会把状态字冲掉。`flash()` 负责设置和清除它。
 - 每个来源的结构：标题 + 月份轴 + 格子 + 额度行。额度在格子下方一行排开、
   **不换行**（用户明确要求保留这种方式）；没有色阶图例（用户明确不要）。
 - 品牌体系：`BRAND` 表（brand.js 顶部）是唯一出处，19 家模型厂的

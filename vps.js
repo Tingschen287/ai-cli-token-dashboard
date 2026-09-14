@@ -8,10 +8,10 @@
    把两者相加或互相比较都是错的，所以脚注里写死了这句话。 */
 
 /* 账号配色：与 BRAND 表无关，这是人不是模型厂。
-   刻意避开品牌橙 #d97757——在这个看板里橙色是 cco 那一行的身份色，
-   拿来标人会让两块图误读成同一个维度。
-   按用量从大到小取色，主力使用者永远是第一个色，一眼看得出谁是大头。 */
-const VPS_PALETTE = ['#5b8ea6', '#7fa05b', '#a67bb5', '#c2a05b', '#6f9f95', '#b5715b'];
+   全部落在暖色系里，跟着整套暖米白 + 品牌橙的调子走——冷蓝冷绿摆进来会很跳。
+   按用量从大到小取色，主力使用者拿品牌橙，一眼看得出谁是大头。
+   实际渲染时还会过一道 soft() 混面板底，和右侧排行条同样的硬度。 */
+const VPS_PALETTE = ['#d97757', '#8a9a7b', '#c9a227', '#a1808f', '#6f9f95', '#b08968'];
 
 function vpsColors(totals) {
   const map = {};
@@ -34,12 +34,19 @@ function vpsPct(v) {
   return Math.max(0, Math.min(100, p));
 }
 
-// 超过八成给橙色警告，超过九成给红——这条线以内都用正常文字色，
-// 免得平时一直亮着反而没人当回事
+/* 电量式四档：用得少是绿，越用越往红走。色值都往暖里调过，
+   纯正的红绿摆在暖米白底上会像贴上去的。
+   档位按「还剩多少」的心理预期切：一半以内安心，七成五开始要看一眼，
+   九成就是真该管了。 */
+const VPS_TONES = [
+  { at: 90, color: '#b5443a' },   // 危险：暖红
+  { at: 75, color: '#d97757' },   // 警告：品牌橙
+  { at: 50, color: '#c9a227' },   // 注意：暖金
+  { at: 0, color: '#6e8b5e' },   // 安全：暖橄榄绿
+];
+
 function vpsTone(pct) {
-  if (pct >= 90) return '#c0392b';
-  if (pct >= 80) return 'var(--accent)';
-  return 'var(--text)';
+  return (VPS_TONES.find(t => pct >= t.at) || VPS_TONES[VPS_TONES.length - 1]).color;
 }
 
 function renderVpsPill(v) {
@@ -88,7 +95,7 @@ function vpsBars(v) {
     const segs = order.filter(n => per[n] && (per[n].up + per[n].down) > 0)
       .map(n => {
         const val = per[n].up + per[n].down;
-        return `<span style="height:${(val / tot * 100).toFixed(2)}%;background:${colors[n]}"
+        return `<span style="height:${(val / tot * 100).toFixed(2)}%;background:${soft(colors[n])}"
                       data-vn="${n}" data-vd="${d}" data-vv="${val}"
                       data-vu="${per[n].up}" data-vw="${per[n].down}"></span>`;
       }).join('');
@@ -103,7 +110,7 @@ function vpsBars(v) {
   }).join('');
 
   const legend = order.map(n =>
-    `<span class="vps-key"><i style="background:${colors[n]}"></i>${n}
+    `<span class="vps-key"><i style="background:${soft(colors[n])}"></i>${n}
      <b>${gb(totals[n])} GB</b></span>`).join('');
 
   return `<div class="vps-chart">${bars}</div>
@@ -145,7 +152,7 @@ function renderVpsPop(v) {
         <circle cx="32" cy="32" r="${R}" fill="none" stroke="${vpsTone(pct)}" stroke-width="7"
                 stroke-linecap="round" transform="rotate(-90 32 32)"
                 stroke-dasharray="${(pct / 100 * circ).toFixed(2)} 999"/>
-        <text x="32" y="36" class="vps-ring-num">${pct.toFixed(0)}%</text>
+        <text x="32" y="36" class="vps-ring-num" fill="${vpsTone(pct)}">${pct.toFixed(0)}%</text>
       </svg>
     </div>
 
@@ -161,7 +168,7 @@ function renderVpsPop(v) {
         <span class="sm">（近 ${f.sample_days || 0} 个完整天）</span></div>
       <div><b>按这个速度</b>
         ${f.days_left == null ? '—'
-          : `还能撑 <span style="color:${safe ? 'inherit' : '#c0392b'}">${f.days_left} 天</span>`}
+          : `还能撑 <span style="color:${safe ? 'inherit' : VPS_TONES[0].color}">${f.days_left} 天</span>`}
         ${daysToReset != null && f.days_left != null
           ? (safe ? '<span class="sm">，够到重置</span>'
                   : '<span class="sm">，撑不到重置日</span>') : ''}</div>
