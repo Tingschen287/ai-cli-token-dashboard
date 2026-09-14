@@ -170,7 +170,11 @@ feat/fix/style/refactor）。
    会话在 `subagents/agent-*.jsonl`，漏掉会整体丢失这部分用量。
 7. **Codex 取 `last_token_usage`（增量），不取 `total_token_usage`（会话累计）**，
    否则重复计数。
-8. 费用：grok 记 `costUsdTicks`（按 1e-9 USD/tick 推定，**名义**值）；opencode 的
+8. **Codex 额度窗口按 `window_minutes` 判定，不要按 primary/secondary 字段名**：
+   老 pro 是 primary=周窗；现在 team 是 primary=5h（300 分钟）、secondary=周窗
+   （10080 分钟）。`>1440` 分钟才标 `week`，否则一律 `5h`。按字段名硬编码会把
+   周额度显示成 5 小时，重置时间也会走短窗的「只显示时刻」。
+9. 费用：grok 记 `costUsdTicks`（按 1e-9 USD/tick 推定，**名义**值）；opencode 的
    `cost` 字段是它按 provider 报价算的 USD 实估值，同样只作参考。其余来源没有
    费用字段。这是消耗看板，不是账单看板。
 

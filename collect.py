@@ -411,17 +411,21 @@ def codex_quota(root):
         if not isinstance(rl, dict):
             continue
         windows = []
-        for src, key in ((rl.get("primary"), "week"), (rl.get("secondary"), "5h")):
+        # primary / secondary 谁短谁长随套餐变：老 pro 是 primary=周窗
+        # （10080 分钟）、secondary 空；现在 team 是 primary=5h（300 分钟）、
+        # secondary=周窗。不能按字段名硬编码，一律看 window_minutes。
+        for src in (rl.get("primary"), rl.get("secondary")):
             if not isinstance(src, dict) or src.get("used_percent") is None:
                 continue
             reset = src.get("resets_at")
             windows.append({
-                # 窗口长短不定（周窗 10080 分钟），>1 天按周窗样式展示
-                "key": key if (src.get("window_minutes") or 0) > 1440 else "5h",
+                # >1 天按周窗样式展示（前端 key!=='5h' 走日期+时刻）
+                "key": "week" if (src.get("window_minutes") or 0) > 1440 else "5h",
                 "pct": round(src.get("used_percent") or 0),
                 "reset": (datetime.fromtimestamp(reset).astimezone()
                           .isoformat(timespec="seconds") if reset else ""),
             })
+        windows.sort(key=lambda w: 0 if w["key"] == "5h" else 1)
         if windows:
             return {"windows": windows, "plan": rl.get("plan_type") or ""}
     return None
