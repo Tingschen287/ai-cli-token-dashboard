@@ -27,14 +27,22 @@
 | `layout.js` | 布局状态（localStorage 读写/自愈/新来源落位）+ 编辑态全部交互（候补池/增删挪/调占比） |
 | `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
 | `charts.js` | 按模型/按项目排行 + 占比饼图 |
+| `vps.js` | VPS 带宽胶囊 + 点开的每日分账号堆叠柱状图（可选功能，没配就整块不出现） |
 | `app.js` | 入口：tooltip、render/renderAll、分段控件、长区间遮罩、口径说明、自动同步、刷新 |
+| `vps_probe.py` | 在 VPS 上就地聚合流量的脚本。**不部署到远端**，由 `collect.py` 通过 SSH stdin 喂给 `python3 -` 执行 |
+| `vps.local.json.example` | VPS 连接配置模板；实际的 `vps.local.json` 含服务器地址，已在 `.gitignore` 排除 |
 | `dashboard.html` | **生成物**，由 `collect.py` 渲染产出，内嵌真实项目名，已在 `.gitignore` 排除，**绝不提交** |
 | `cc-token-dashboard.service.example` | systemd 用户服务模板，两处 `%h/path/to/...` 需改成实际路径 |
 | `README.md` | 面向用户的完整文档（口径、布局、隐私、部署），改行为时同步更新 |
 
 JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**（`collect.py` 顶部
-`JS_FILES` 常量）：brand → data → layout → calendar → charts → app。跨文件调用
-的都是全局函数；新增文件要同步加进 `JS_FILES`。
+`JS_FILES` 常量）：brand → data → layout → calendar → charts → vps → app。跨文件
+调用的都是全局函数；新增文件要同步加进 `JS_FILES`。
+
+**`app.js` 必须排最后**：全部 JS 拼进同一个 `<script>` 块，`app.js` 末尾会立即
+执行 `applyData()` / `renderAll()`。函数声明会提升，但 `const` / `let` 不会——
+排在 `app.js` 后面的文件，其顶层常量在 `renderAll()` 跑的时候还在暂时性死区里，
+一旦被调用路径碰到就是 ReferenceError。`vps.js` 因此排在 `app.js` 之前。
 
 ## collect.py 内部结构
 
@@ -173,6 +181,29 @@ feat/fix/style/refactor）。
 8. 费用：grok 记 `costUsdTicks`（按 1e-9 USD/tick 推定，**名义**值）；opencode 的
    `cost` 字段是它按 provider 报价算的 USD 实估值，同样只作参考。其余来源没有
    费用字段。这是消耗看板，不是账单看板。
+
+## VPS 流量：两个口径不能混
+
+和 token 口径无关，是另一套数，但同样容易看错，单列在此。
+
+| 口径 | 来源 | 用在哪 |
+|---|---|---|
+| `billing` | vnstat，网卡进出字节 | 顶部大数字 / 百分比 / 环形 |
+| `user` | S-UI 的 `stats` 表，按账号 | 柱状图 / 图例 |
+
+`billing` 约为 `user` 的 **2 倍**——一个字节进来再出去，网卡上算两遍。
+**两者相加或互相比较都是错的。** 顶部数字必须用 `billing`（它决定会不会超额），
+柱状图必须用 `user`（只有它能分到人）。历史上正是混用这两个数，才有过「面板显示
+174GB、脚本算出 547GB」的争论。
+
+vnstat 只能从装的那天起记，之前的日子按 `user × 倍数` 估算。倍数一开始是理论值
+`2.0`，等 vnstat 攒够完整整天后自动改用实测值（同期两个口径的累计量相除），估算
+部分会自己缩小到零。倍数**刻意不逐日匹配**：VPS 一般跑 UTC、S-UI 按 `tz_offset`
+切天，逐日对齐会被 8 小时错位干扰，用整段累计量求比值就绕开了。
+
+远端脚本 `vps_probe.py` 不部署到 VPS，由 `collect.py` 通过 SSH stdin 喂给
+`python3 -`。**不要改成在 VPS 上常驻一个 HTTP 接口**——那台机器通常是代理节点，
+多开一个对外端口就多一个被扫描的入口，而聚合本身只要 0.5 秒，SSH 完全够用。
 
 ## 安全与隐私
 

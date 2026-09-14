@@ -3,6 +3,9 @@ dashboard.html
 *.json
 !package.json
 
+# VPS 连接配置：含自己的服务器地址。已被上面的 *.json 覆盖，这里显式重申一遍
+vps.local.json
+
 __pycache__/
 *.py[cod]
 
@@ -11,3 +14,6 @@ __pycache__/
 
 .DS_Store
 .venv/
+
+# 浏览器验收的临时截图
+*.png

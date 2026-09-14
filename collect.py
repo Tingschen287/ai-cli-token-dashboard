@@ -21,6 +21,7 @@ import argparse
 import collections
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -531,7 +532,10 @@ def collect():
 # 前端按职责拆成多个静态文件，输出时再内联拼装——零构建、无 module 系统。
 # serve 模式每次请求现读现拼（改完刷新即生效）；render 产物仍是内联一切的单文件。
 CSS_FILE = "style.css"
-JS_FILES = ["brand.js", "data.js", "layout.js", "calendar.js", "charts.js", "app.js"]
+# 顺序有意义：全部拼成一个 script 块，app.js 末尾会立即执行 renderAll()，
+# 所以它依赖的 vps.js 顶层常量必须先初始化完（函数声明会提升，const 不会）。
+JS_FILES = ["brand.js", "data.js", "layout.js", "calendar.js", "charts.js",
+            "vps.js", "app.js"]
 
 
 def build_html():
@@ -912,6 +916,97 @@ class QuotaPoller:
             time.sleep(self.interval)
 
 
+VPS_INTERVAL = 600
+VPS_CONF = HERE / "vps.local.json"
+
+
+def vps_config():
+    """VPS 连接配置。没配就返回 None，整个功能静默关闭。
+
+    地址放 `vps.local.json`（已在 .gitignore 里）或环境变量 `VPS_SSH_HOST`，
+    不写进仓库——那是用户自己的服务器地址。
+    """
+    conf = {}
+    try:
+        conf = json.loads(VPS_CONF.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    host = os.environ.get("VPS_SSH_HOST") or conf.get("host")
+    if not host:
+        return None
+    return {
+        "host": host,
+        "quota_gb": float(conf.get("quota_gb", 1000)),
+        "reset_day": int(conf.get("reset_day", 25)),
+        "tz_offset": float(conf.get("tz_offset", 8)),
+        "ssh_opts": [str(x) for x in conf.get("ssh_opts", [])],
+        "label": str(conf.get("label", "Bandwidth Usage")),
+    }
+
+
+def vps_probe(conf):
+    """一次 SSH 往返：把 vps_probe.py 的源码喂给远端 python3，收回聚合 JSON。
+
+    远端不落盘、不常驻、不开端口。VPS 是翻墙节点，多开一个对外 HTTP 接口
+    就多一个被扫描的入口，而 SSH 本来就是现成的加密通道；聚合在远端做，
+    回来的只有几 KB。数值全部先转成数字再拼进命令行，配置文件被改坏也
+    注入不进东西。
+    """
+    script = (HERE / "vps_probe.py").read_bytes()
+    remote = ("python3 - --quota-gb %.3f --reset-day %d --tz-offset %.2f"
+              % (conf["quota_gb"], conf["reset_day"], conf["tz_offset"]))
+    cmd = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new",
+           "-o", "ConnectTimeout=10", *conf["ssh_opts"], conf["host"], remote]
+    done = subprocess.run(cmd, input=script, capture_output=True, timeout=90)
+    if done.returncode != 0:
+        err = (done.stderr or b"").decode("utf-8", "replace").strip()
+        raise RuntimeError(err.splitlines()[-1][:200] if err else "ssh 退出码 %d" % done.returncode)
+    data = json.loads(done.stdout.decode("utf-8"))
+    data["label"] = conf["label"]
+    return data
+
+
+class VpsPoller:
+    """慢轮询 VPS 流量。失败沿用旧数据并标 stale，页面不会突然空掉。
+
+    间隔比额度轮询长得多（默认 10 分钟）：流量是缓变量，而每次轮询是一次
+    完整的 SSH 握手，没必要频繁。
+    """
+
+    def __init__(self, conf, interval=VPS_INTERVAL):
+        self.conf = conf
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.latest = None
+
+    def get(self):
+        with self.lock:
+            return self.latest
+
+    def poll_once(self):
+        try:
+            fresh = vps_probe(self.conf)
+            fresh["stale"] = False
+            fresh["error"] = ""
+        except Exception as exc:
+            with self.lock:
+                if self.latest:
+                    self.latest = {**self.latest, "stale": True, "error": str(exc)}
+                else:
+                    self.latest = {"error": str(exc), "stale": True}
+            return
+        with self.lock:
+            self.latest = fresh
+
+    def loop(self):
+        while True:
+            try:
+                self.poll_once()
+            except Exception as exc:
+                print(f"[warn] VPS 流量轮询失败: {exc}", file=sys.stderr)
+            time.sleep(self.interval)
+
+
 class Snapshot:
     """后台线程定时扫描的结果。页面请求直接读这里，不各自触发扫描。"""
 
@@ -952,10 +1047,18 @@ def serve(port, interval, host="127.0.0.1"):
     threading.Thread(target=snapshot.loop, daemon=True).start()
     quota = QuotaPoller()
     threading.Thread(target=quota.loop, daemon=True).start()
+    # 没配 VPS 就整个不启动，页面上那块也不会出现
+    vps_conf = vps_config()
+    vps = VpsPoller(vps_conf) if vps_conf else None
+    if vps:
+        threading.Thread(target=vps.loop, daemon=True).start()
 
     def with_quota(payload):
         # 浅拷贝后挂额度，不污染 Snapshot 里的共享对象
-        return {**payload, "quota": quota.get()}
+        extra = {**payload, "quota": quota.get()}
+        if vps:
+            extra["vps"] = vps.get()
+        return extra
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, body, content_type):
@@ -1009,7 +1112,24 @@ def main():
                         help="服务模式下的自动刷新间隔，默认 60 秒")
     parser.add_argument("--host", default="127.0.0.1",
                         help="监听地址，默认 127.0.0.1（不要改成 0.0.0.0）")
+    parser.add_argument("--vps-once", action="store_true",
+                        help="只跑一次 VPS 流量采集并打印，用来调试 SSH 配置")
     args = parser.parse_args()
+
+    if args.vps_once:
+        conf = vps_config()
+        if not conf:
+            print("没有配置 VPS：建 vps.local.json 写 {\"host\": \"root@1.2.3.4\"} "
+                  "或设环境变量 VPS_SSH_HOST", file=sys.stderr)
+            return 1
+        try:
+            print(json.dumps(vps_probe(conf), ensure_ascii=False, indent=2))
+        except Exception as exc:
+            print("采集失败：%s" % exc, file=sys.stderr)
+            print("排查：先确认 `ssh %s 'echo ok'` 免密能通，再确认远端有 "
+                  "/usr/local/s-ui/db/s-ui.db" % conf["host"], file=sys.stderr)
+            return 1
+        return 0
 
     if args.serve:
         serve(args.serve, max(5, args.interval), args.host)
@@ -1040,4 +1160,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # main() 的返回值就是退出码（没有显式返回时是 None，等同于 0），
+    # 这样 --vps-once 之类的调试入口失败时能被脚本检测到
+    sys.exit(main())

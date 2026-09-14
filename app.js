@@ -100,6 +100,7 @@ function renderAll() {
   renderMeta();
   render();
   renderRanks();
+  renderVps();    // 没配 VPS 时胶囊保持隐藏，等于空操作
   renderPool();   // autoSync 换了数据后候补池也要跟着重算（非编辑态是隐藏空操作）
   // 长区间遮罩开着的话跟着刷新
   if (!document.getElementById('longview').hidden) renderLongview();
@@ -180,7 +181,9 @@ document.addEventListener('keydown', e => {
    不重绘，免得整点把正在 hover 的格子刷掉。 */
 let lastSync = Date.now();
 const signature = p => JSON.stringify([
-  p.profiles.map(x => [x.key, x.incr, x.msgs]), p.daily.length
+  p.profiles.map(x => [x.key, x.incr, x.msgs]), p.daily.length,
+  // VPS 流量自己按 10 分钟的节奏变，token 没动时也要能触发重绘
+  p.vps && p.vps.billing ? [p.vps.billing.bytes, !!p.vps.stale] : 0
 ]);
 let lastSig = signature(DATA);
 

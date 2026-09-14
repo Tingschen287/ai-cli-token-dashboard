@@ -1,0 +1,14 @@
+{
+  "_说明": [
+    "把这个文件复制成 vps.local.json 再改。vps.local.json 不进仓（含你的服务器地址）。",
+    "也可以只设环境变量 VPS_SSH_HOST，它覆盖这里的 host。",
+    "不配置的话，看板顶部那块流量不会出现，其余功能不受影响。",
+    "前提：本机能免密 ssh 到这台机器，且远端装了 s-ui 和 vnstat。"
+  ],
+  "host": "root@1.2.3.4",
+  "quota_gb": 1000,
+  "reset_day": 25,
+  "tz_offset": 8,
+  "label": "Bandwidth Usage",
+  "ssh_opts": []
+}

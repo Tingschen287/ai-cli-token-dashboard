@@ -17,6 +17,17 @@
   <header class="topbar">
     <h1>Token Activity</h1>
     <span class="total" id="total"></span>
+    <!-- VPS 带宽胶囊：没配 vps.local.json 时整块不出现（JS 里保持 hidden）。
+         点开是每日分账号的柱状图，见 vps.js -->
+    <button class="vps-pill" id="vps-btn" hidden aria-expanded="false">
+      <svg class="vps-ring" viewBox="0 0 20 20" width="15" height="15" aria-hidden="true">
+        <circle cx="10" cy="10" r="8" fill="none" stroke="var(--empty)" stroke-width="3.4"/>
+        <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="3.4"
+                stroke-linecap="round" transform="rotate(-90 10 10)"
+                id="vps-ring-arc" stroke-dasharray="0 999"/>
+      </svg>
+      <span id="vps-pill-text"></span>
+    </button>
     <span class="spacer"></span>
     <span class="sync" id="sync"></span>
     <button class="btn" id="refresh">
@@ -83,6 +94,7 @@
 
 <div id="tip"></div>
 <div id="info" hidden></div>
+<div id="vps-pop" hidden></div>
 
 <!-- 长区间全屏遮罩：主屏只放 3 个月，半年/一年在这里用整个屏幕的宽高画 -->
 <div id="longview" hidden>
