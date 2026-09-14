@@ -389,3 +389,86 @@ body.editing.dragging .row-drop { display: flex; }
 .ccs-pick:hover { border-color: var(--muted); color: var(--text); }
 .ccs-pick.on { color: var(--text); border-color: var(--accent); background: var(--faint); }
 .ccs-picker-reset { margin-top: 8px; }
+
+/* ---------- VPS 带宽 ----------
+   顶栏胶囊 + 点开的明细卡。胶囊高度和 .btn 对齐，免得顶栏参差 */
+.vps-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-left: 10px; padding: 4px 10px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text); font: inherit; font-size: 12px; line-height: 1.4;
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.vps-pill:hover { border-color: var(--muted); }
+.vps-pill[hidden] { display: none; }
+.vps-pill b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.vps-den { color: var(--muted); font-weight: 400; }
+.vps-ring { flex: none; }
+
+#vps-pop {
+  position: fixed; left: 18px; top: 52px; z-index: 60;
+  width: min(620px, calc(100vw - 36px));
+  background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 8px 40px rgba(0,0,0,.18); padding: 16px 18px;
+  font-size: 12px; color: var(--muted);
+}
+#vps-pop[hidden] { display: none; }
+
+.vps-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.vps-title { font-family: var(--serif); font-size: 17px; color: var(--text); }
+.vps-sub { margin-top: 3px; font-variant-numeric: tabular-nums; }
+.vps-big-ring { flex: none; }
+.vps-ring-num {
+  text-anchor: middle; font-size: 15px; font-weight: 600;
+  fill: var(--text); font-family: inherit;
+}
+
+.vps-big {
+  margin: 6px 0 14px; font-size: 30px; font-weight: 600;
+  font-variant-numeric: tabular-nums; letter-spacing: -.5px;
+}
+.vps-big .vps-unit { font-size: 17px; font-weight: 500; }
+.vps-big .vps-den { font-size: 15px; }
+
+/* 柱状图：固定高度，列等宽铺满，列间距靠 gap。
+   柱子自下而上生长，所以列内用 flex-end 对齐 */
+.vps-chart {
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 96px; padding-bottom: 14px; position: relative;
+}
+.vps-col {
+  flex: 1 1 0; min-width: 0; height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end; position: relative;
+}
+.vps-bar {
+  display: flex; flex-direction: column-reverse;
+  border-radius: 2px; overflow: hidden; min-height: 0;
+}
+.vps-bar span { display: block; width: 100%; transition: filter .12s; }
+.vps-bar span:hover { filter: brightness(1.15); }
+.vps-day {
+  position: absolute; bottom: -14px; left: 0; right: 0;
+  text-align: center; font-size: 9px; color: var(--muted);
+  font-variant-numeric: tabular-nums; overflow: hidden;
+}
+
+.vps-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 2px; }
+.vps-key { display: inline-flex; align-items: center; gap: 5px; }
+.vps-key i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.vps-key b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.vps-foot {
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+  line-height: 1.7;
+}
+.vps-foot b { color: var(--text); }
+.vps-foot .sm { font-size: 11px; }
+.vps-cal { margin-top: 6px; opacity: .85; }
+.vps-err { color: var(--accent); }
+
+@media (max-width: 940px) {
+  #vps-pop { left: 12px; right: 12px; width: auto; }
+  .vps-day { font-size: 8px; }
+}
+/* 跨月那根柱子的标签加重，免得 31 之后的 1 号看不出换月了 */
+.vps-day.vps-month { color: var(--text); font-weight: 600; }
