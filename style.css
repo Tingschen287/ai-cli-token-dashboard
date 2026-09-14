@@ -387,7 +387,7 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
   position: fixed; pointer-events: none; opacity: 0; transition: opacity .1s;
   background: var(--panel); color: var(--text); font-size: 12px; line-height: 1.55;
   padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius);
-  z-index: 50; white-space: nowrap;
+  z-index: 90; white-space: nowrap;
   box-shadow: 0 8px 40px rgba(0,0,0,.18);
 }
 #tip b { font-weight: 600; }
