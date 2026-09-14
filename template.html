@@ -15,7 +15,12 @@
 <body>
 <div class="app">
   <header class="topbar">
-    <h1>Token Activity</h1>
+    <div class="topbar-title">
+      <h1>Token Activity</h1>
+      <button class="btn cp-trigger" id="coding-plan-btn" aria-haspopup="dialog" aria-controls="coding-plan-dialog">
+        Coding Plan <span class="cp-alert-dot" hidden></span>
+      </button>
+    </div>
     <!-- 三列网格：标题靠左、全期总账压正中、其余靠右。左右两列都是 1fr，
          中间列才真的落在顶栏中线上（换成 flex + spacer 只能居中于剩余空间） -->
     <span class="total" id="total"></span>
@@ -99,6 +104,21 @@
 <div id="tip"></div>
 <div id="info" hidden></div>
 <div id="vps-pop" hidden></div>
+
+<dialog id="coding-plan-dialog" aria-labelledby="cp-title">
+  <header class="cp-header">
+    <div><p class="cp-eyebrow">CODING PLAN / API</p><h2 id="cp-title">部门额度</h2>
+      <p class="cp-subtitle">个人编程套餐与 API 余额</p></div>
+    <button class="btn icon" id="cp-close" aria-label="关闭部门额度">✕</button>
+  </header>
+  <div class="cp-toolbar">
+    <span id="cp-summary" role="status">正在读取额度…</span>
+    <div><span id="cp-updated"></span><button class="btn" id="cp-refresh">↻ 刷新额度</button></div>
+  </div>
+  <p id="cp-error" role="status" hidden></p>
+  <div class="cp-grid" id="cp-grid"></div>
+  <footer class="cp-footer"><span>进度条表示剩余额度 · 少于 20% 提醒 · 少于 10% 告急</span><span>每 3 分钟自动查询</span></footer>
+</dialog>
 
 <!-- 长区间全屏遮罩：主屏只放 3 个月，半年/一年在这里用整个屏幕的宽高画 -->
 <div id="longview" hidden>

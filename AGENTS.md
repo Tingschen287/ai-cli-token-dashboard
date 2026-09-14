@@ -11,14 +11,18 @@
 **技术栈**：零第三方依赖。
 
 - 后端：Python 3.8+，只用标准库（`http.server` / `sqlite3` / `urllib` / `json`）
-- 前端：原生 HTML/CSS/JS 按职责拆分（`template.html` 骨架 + `style.css` + 6 个 JS），
+- 前端：原生 HTML/CSS/JS 按职责拆分（`template.html` 骨架 + `style.css` + 8 个 JS），
   无构建步骤、无 npm——`collect.py` 输出时内联拼装回单文件
 
 ## 目录结构
 
 | 文件 | 角色 |
 |---|---|
-| `collect.py` | 看板唯一的 Python 文件：扫描、聚合、渲染、HTTP 服务全部在此 |
+| `collect.py` | 扫描、聚合、渲染和 HTTP 服务入口 |
+| `coding_plans.py` | 部门个人套餐的独立采集模块；四家官方额度 / 余额接口，凭据与原始响应不出后端 |
+| `coding-plans.js` | 标题旁 Coding Plan 按钮、部门额度 dialog、独立刷新和低余额提醒 |
+| `coding-plans.local.json.example` | 多账号凭据模板；实际 `.json` 已忽略，禁止提交 |
+| `test_coding_plans.py` | 额度解析、旧值保留和凭据隔离回归测试，使用虚构数据 |
 | `cache_compare.py` | 独立小脚本：对比 K3 在 kimi 官方接入与 cc-switch 转发下的缓存命中率，复用 `collect.py` 的解析器 |
 | `template.html` | 前端骨架模板（约 110 行）：HTML + 三个占位符 `/*__STYLE__*/`、`/*__APP__*/`、`/*__DATA__*/null` |
 | `style.css` | 全部样式（含末尾的编辑态样式一节） |
@@ -36,7 +40,7 @@
 | `README.md` | 面向用户的完整文档（口径、布局、隐私、部署），改行为时同步更新 |
 
 JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**（`collect.py` 顶部
-`JS_FILES` 常量）：brand → data → layout → calendar → charts → vps → app。跨文件
+`JS_FILES` 常量）：brand → data → layout → calendar → charts → vps → coding-plans → app。跨文件
 调用的都是全局函数；新增文件要同步加进 `JS_FILES`。
 
 **`app.js` 必须排最后**：全部 JS 拼进同一个 `<script>` 块，`app.js` 末尾会立即
@@ -76,8 +80,12 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   先重读文件再合并写回（原子写、chmod 600）**，否则会顶掉 kimi CLI 的登录态。
 - `Snapshot`：后台线程按 `--interval`（默认 60s）定时重扫，`/api/data?force=1`
   立即重扫（页面刷新按钮）。
-- `serve()`：`http.server.ThreadingHTTPServer`，路由只有 `/api/data`、`/`、
-  `/healthz`，其余 404。
+- `CodingPlanPoller`：从 `coding-plans.local.json` 热读部门账号，独立每 180 秒并发
+  查询；`/api/coding-plans?refresh=1` 唤醒采集（最短间隔 15 秒），只在内存留快照。
+  返回值严格白名单，错误仅用固定文案。换 Key、删除账号不能沿用另一账号的旧值。
+  MiniMax 的 `remaining_percent` 优先于零计数；GLM 支持实际返回的 `CREDIT_LIMIT`。
+- `serve()`：`http.server.ThreadingHTTPServer`，含 `/api/data`、`/api/coding-plans`、
+  首页与 `/healthz`；本地凭据文件没有 HTTP 路由。
 
 ## 前端约定
 
@@ -106,11 +114,15 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   全屏遮罩里，用独立的 `lvState` 渲染——`renderCalendar(boxId, view, weeks)`、
   `activeWindow(view, weeks)`、`windowTotals(view, weeks)` 都是参数化的，
   主屏和遮罩各调各的，不要回退成读全局 state；遮罩跟随同一份 LAYOUT。
-- 顶栏是 `1fr auto 1fr` 三列网格：标题靠左、`#total` 压正中、`.topbar-right`
+- 顶栏是 `1fr auto 1fr` 三列网格：标题与 Coding Plan 按钮靠左、`#total` 压正中、`.topbar-right`
   （带宽胶囊 + 三个按钮）靠右。**中间列要真的落在中线上就得用网格**——flex
   加 spacer 只能让它居中于「剩余空间」，标题一长就偏。窄屏（≤940px）`#total`
   隐藏，此时**必须连模板一起改成两列**：`display:none` 的元素不再占网格位，
-  光藏不改模板的话右侧那组会掉进中间列，贴不到右边缘。
+  光藏不改模板的话右侧那组会掉进中间列，贴不到右边缘。新增部门入口后总账从
+  ≤1160px 起隐藏；≤500px 顶栏分成标题和右控件两行。
+- 部门额度用原生 `<dialog>`，Esc 关闭并回焦入口，输入和刷新快捷键不传播到主屏。
+  单独请求 `/api/coding-plans`，不依赖 `DATA` 或主屏 signature；每 30 秒读快照。
+  缺失窗口显示未知，过了 reset 不能擅自恢复为 100%。所有账号简称必须转义。
 - 顶栏一排控件（`.btn` / `.vps-pill` / `#total`）高度统一锁在 `--ctl-h`。三者
   内容字号不同，靠 padding 对不齐，`#total` 内部还是 baseline 对齐会额外撑高
   行盒——直接锁盒高最省事，改一处全跟着走。
@@ -158,9 +170,10 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
 
 ## 运行 / 验证
 
-没有测试套件、没有 lint 配置。改动后的验证方式：
+额度模块有标准库 unittest，其余暂无测试套件或 lint 配置。改动后的验证方式：
 
 ```bash
+python3 -m unittest -v test_coding_plans  # 虚构数据检查额度口径和凭据边界
 python3 collect.py --json /tmp/d.json   # 只导出聚合数据，确认解析/聚合不报错
 python3 collect.py                      # 生成 dashboard.html，浏览器打开目检
 python3 collect.py --serve 8899         # 起服务，开 http://127.0.0.1:8899 目检

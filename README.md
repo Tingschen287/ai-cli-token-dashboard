@@ -101,6 +101,44 @@ Python，所以按钮必须有个后端替它去扫描。服务只绑 `127.0.0.1
 
 要增删来源，改 `collect.py` 顶部的 `PROFILES`，`format` 决定用哪个 reader。
 
+## 部门 Coding Plan 额度（可选）
+
+标题右侧的 **Coding Plan** 按钮打开独立「部门额度」弹窗。个人套餐按账号展示，
+不与主屏 CLI 会话消耗混算。沿用主页面明暗主题；桌面两列卡片，手机单列滚动。
+
+```bash
+cp coding-plans.local.json.example coding-plans.local.json
+chmod 600 coding-plans.local.json
+# 编辑各账号的 api_key，不添加 Bearer 前缀；多账号复制对应条目并修改 label
+python3 collect.py --serve
+```
+
+已有配置文件时直接编辑，勿再次复制覆盖。配置每轮自动重读，填好后点击「刷新额度」
+即可生效。`coding-plans.local.json` 已被 Git 忽略，Key 只在后端用于官方接口认证；
+接口返回只包含归一化的额度和账号简称，不含 Key、用户资料或原始响应。
+
+| 平台 | Key 类型 | 展示内容 |
+|---|---|---|
+| MiniMax | 个人 Token Plan 订阅 Key | 5 小时、周窗口剩余比例及恢复时间 |
+| Kimi | 个人 Kimi Code Key | 接口返回的短窗口、周额度及恢复时间 |
+| GLM | 个人 Coding Plan Key | `CREDIT_LIMIT` / `TOKENS_LIMIT` 窗口；返回时也显示 MCP 额度 |
+| DeepSeek | 开放平台 API Key | 各币种可用余额、充值余额、赠金 |
+
+进度条统一表示**剩余**，少于 20% 提醒、少于 10% 告急；任一窗口偏低都会影响卡片
+状态和标题旁提示点。DeepSeek 不画没有分母的百分比条，默认低余额提醒线为 ¥50
+（美元余额为 $10），可在卡片里修改；提醒线仅保存在当前浏览器。
+
+后端每 180 秒并发查询一次，前端每 30 秒同步快照。弹窗刷新只触发额度查询，不重扫
+会话记录；手动查询有 15 秒最短间隔。每张卡显示最后成功时间，失败保留同一凭据的
+旧值并标「数据已过期」；没有有效数据时显示未知，不以 0 或 100% 代替。
+清空或更换 Key 不会继承旧账号数据。到重置时间仅提示等待更新，不自行将额度回满。
+
+该功能仅在服务模式可用，数据快照只保存在内存，未采集历史趋势或实现续费操作。
+静态导出的 HTML 不包含部门额度数据。额度接口为 `/api/coding-plans`；前端不读取
+凭据文件，也没有写配置接口。供应商的控制台链接可从各卡片直接打开。
+
+回归检查：`python3 -m unittest -v test_coding_plans`（虚构数据，无外部调用）。
+
 ## 记录格式
 
 **claude** —— `<dir>/projects/<项目>/<会话>.jsonl`

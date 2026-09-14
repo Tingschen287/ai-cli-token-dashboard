@@ -29,6 +29,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from coding_plans import CodingPlanPoller
 
 # 要扫描的配置目录。key 是看板标识，dir 支持 ~ 展开，format 决定用哪个解析器。
 PROFILES = [
@@ -539,7 +540,7 @@ CSS_FILE = "style.css"
 # 顺序有意义：全部拼成一个 script 块，app.js 末尾会立即执行 renderAll()，
 # 所以它依赖的 vps.js 顶层常量必须先初始化完（函数声明会提升，const 不会）。
 JS_FILES = ["brand.js", "data.js", "layout.js", "calendar.js", "charts.js",
-            "vps.js", "app.js"]
+            "vps.js", "coding-plans.js", "app.js"]
 
 
 def build_html():
@@ -1051,6 +1052,8 @@ def serve(port, interval, host="127.0.0.1"):
     threading.Thread(target=snapshot.loop, daemon=True).start()
     quota = QuotaPoller()
     threading.Thread(target=quota.loop, daemon=True).start()
+    coding_plans = CodingPlanPoller()
+    threading.Thread(target=coding_plans.loop, daemon=True).start()
     # 没配 VPS 就整个不启动，页面上那块也不会出现
     vps_conf = vps_config()
     vps = VpsPoller(vps_conf) if vps_conf else None
@@ -1079,6 +1082,11 @@ def serve(port, interval, host="127.0.0.1"):
                 # force=1 是刷新按钮：不等定时器，立刻重扫
                 payload = snapshot.refresh() if "force=1" in query else snapshot.get()
                 self._send(json.dumps(with_quota(payload), ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            elif path == "/api/coding-plans":
+                if urllib.parse.parse_qs(query).get("refresh") == ["1"]:
+                    coding_plans.request_refresh()
+                self._send(json.dumps(coding_plans.get(), ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             elif path in ("/", "/index.html", "/dashboard.html"):
                 # 每次请求现读现拼，开发时改完静态文件刷新即生效
