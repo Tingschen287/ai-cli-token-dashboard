@@ -174,7 +174,7 @@ info.innerHTML = `
   <div><b>Cross-tool alignment</b>: Grok's <code>inputTokens</code> includes cache reads, Claude's <code>input_tokens</code> doesn't; this is subtracted at collection time.</div>
   <div><b>Dedup</b>: Claude by <code>message.id</code> (streaming writes repeat), Grok by <code>session+prompt_id+model</code> (naturally unique).</div>
   <div><b>Timezone</b>: Claude's UTC strings and Grok's unix seconds are both converted to local time.</div>
-  <div><b>Cost</b>: only Grok records <code>costUsdTicks</code>, estimated at 1e-9 USD and nominal under a subscription — not actual billing.</div>
+  <div><b>Cost</b>: only Grok records <code>costUsdTicks</code> (official scale 1 USD = 1e10 ticks): actual billing for API-key calls, nominal value for OAuth/subscription sessions.</div>
   <div><b>Quota area</b>: below each grid, single row. The plan's 5-hour and weekly window usage, independent of the time window. cco / ccs / grok / kimi are polled every 3 min (serve mode only; on failure the last successful data is shown). Codex's <code>rate_limits</code> rides along in its session files — read locally, no network.</div>
   <div><b>Cumulative view</b>: cells are still colored by that day's increment (cumulative is monotonic, coloring carries no information); hover a cell for the cumulative value up to that day.</div>
   <div><b>Refresh</b>: auto-syncs every 60s, reads only local session logs, consumes no tokens.</div>`;

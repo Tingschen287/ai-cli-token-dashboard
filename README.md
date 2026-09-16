@@ -206,7 +206,9 @@ Esc 或 ✕ 关掉。遮罩里有独立的视图和范围切换，不影响主�
 **每个来源：标题 + 月份轴 + 格子 + 额度行。** 额度在格子下方一行排开、不换行
 （窄屏截断不挤压格子），是账号实时状态，不随时间窗口变：
 cco / ccs / grok / kimi 走后端慢轮询（仅服务模式；kimi 用 CLI 的 OAuth 凭证访问
-官方 `/v1/usages`），codex 直接从会话文件里读。
+官方 `/v1/usages`），codex 直接从会话文件里读。grok 行在配好 xAI Management
+Key（`~/.grok/xai-management-key.env`）后，还会额外显示本机团队 API key 的
+本月实付（悬停看全队合计）。
 没有色阶图例——「越深越多」看格子本身就够直观。
 
 排行榜不按高度裁行数——放不下就滚动（裁掉的长尾根本看不到）。
@@ -327,10 +329,10 @@ vnstat 只能从装的那天起记，装之前的日子按 `S-UI × 倍数` 估�
 
 ## 关于费用
 
-Grok 记了 `costUsdTicks`，看板按 **1e-9 USD/tick 推定**折算，标为"名义"值——
-该单位未经官方文档确认，只是量级自洽（平均约 $4.6/M token，落在 frontier 模型
-合理区间）。而且 `~/.grok/models_cache.json` 显示 `auth_method: session`，是订阅
-登录，这个金额不等于实际扣费。OpenCode 的 `cost` 字段是它按 provider 报价算的
+Grok 记了 `costUsdTicks`，按 **xAI 官方口径 1 USD = 1e10 ticks** 折算（2026-09
+经 Management API 账单核对确认，此前误按 1e-9 USD/tick 估算、虚高 10 倍）。API
+key 直连的调用是实际计费；OAuth 订阅会话（`auth_method: session`）是名义价值，
+不等于实际扣费。OpenCode 的 `cost` 字段是它按 provider 报价算的
 USD 实估值，同样只作参考——你的实际套餐/免费额度它并不知道。
 
 Claude 侧完全无法算钱：官方账号是订阅制；第三方经 CC-Switch 代理，真实计费在代理

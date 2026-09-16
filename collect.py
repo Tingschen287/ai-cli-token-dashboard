@@ -332,7 +332,9 @@ def parse_opencode_file(path):
                 cache_read=cache.get("read") or 0,
                 reasoning=usage.get("reasoning") or 0,
                 calls=1,
-                cost_ticks=round((d.get("cost") or 0) * 1e9),
+                # opencode 的 cost 是 USD 实估值；cost_ticks 统一 1 USD=1e10 ticks
+                # （xAI 官方口径），前端 /1e10 还原。
+                cost_ticks=round((d.get("cost") or 0) * 1e10),
             ))
     except sqlite3.Error:
         pass
@@ -984,6 +986,63 @@ def quota_grok():
                          "reset": period.get("end") or ""}]}
 
 
+XAI_MGMT_ENV = Path.home() / ".grok" / "xai-management-key.env"
+XAI_API_ENV = Path.home() / ".grok" / "xai-api-key.env"
+
+
+def _env_file_vars(path):
+    """极简 `export K="V"` 解析，只服务本地凭据文件，不碰 shell。"""
+    out = {}
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("export ") and "=" in line:
+                k, _, v = line[len("export "):].partition("=")
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return out
+
+
+def quota_xai_team():
+    """xAI 团队账单（Management API）：用量分析按 api_key_id 分组，识别本机
+    这把 key（列表 redactedApiKey 的尾四位与本地 key 尾缀匹配）的本月实付。
+    普通团队 key 调不通（401），必须是 console 的 Management Key。"""
+    mgmt = _env_file_vars(XAI_MGMT_ENV)
+    token, team = mgmt.get("XAI_MANAGEMENT_KEY"), mgmt.get("XAI_TEAM_ID")
+    if not token or not team:
+        return None
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json",
+               "User-Agent": "Token-Dashboard/1.0"}
+    keys = _http_get_json(
+        f"https://management-api.x.ai/auth/teams/{team}/api-keys",
+        headers).get("apiKeys") or []
+    local = _env_file_vars(XAI_API_ENV).get("XAI_API_KEY") or ""
+    mine = next((k for k in keys
+                 if local and (k.get("redactedApiKey") or "").endswith(local[-4:])), None)
+    now = datetime.now().astimezone()
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    body = json.dumps({"analyticsRequest": {
+        "timeRange": {"startTime": start.strftime("%Y-%m-%d %H:%M:%S"),
+                      "endTime": (now + timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S"),
+                      "timezone": "Etc/GMT"},
+        "timeUnit": "TIME_UNIT_NONE",
+        "values": [{"name": "usd", "aggregation": "AGGREGATION_SUM"}],
+        "groupBy": ["api_key_id"], "filters": []}}).encode()
+    req = urllib.request.Request(
+        f"https://management-api.x.ai/v1/billing/teams/{team}/usage",
+        data=body, headers={**headers, "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        series = json.loads(resp.read().decode("utf-8")).get("timeSeries") or []
+    by_key = {ts["group"][0]: sum(dp["values"][0] for dp in ts.get("dataPoints") or [])
+              for ts in series if ts.get("group")}
+    out = {"currency": "USD", "team_spend": round(sum(by_key.values()), 2)}
+    if mine:
+        out["key_name"] = mine.get("name") or "api-key"
+        out["key_spend"] = round(by_key.get(mine.get("apiKeyId"), 0.0), 2)
+    return out
+
+
 class QuotaPoller:
     """慢轮询各家额度，单家失败沿用该家的旧数据，页面永远有东西显示。"""
 
@@ -999,7 +1058,8 @@ class QuotaPoller:
     def poll_once(self):
         fresh = {}
         for key, fn in (("cco", quota_cco), ("kimi", quota_kimi_code),
-                        ("ccs", quota_ccs), ("grok", quota_grok)):
+                        ("ccs", quota_ccs), ("grok", quota_grok),
+                        ("xai", quota_xai_team)):
             try:
                 fresh[key] = fn()
             except Exception:
@@ -1010,6 +1070,7 @@ class QuotaPoller:
             merged["cco"] = fresh["cco"] or old.get("cco")
             merged["kimi"] = fresh["kimi"] or old.get("kimi")
             merged["grok"] = fresh["grok"] or old.get("grok")
+            merged["xai"] = fresh["xai"] or old.get("xai")
             if fresh["ccs"] is None:
                 merged["ccs"] = old.get("ccs")
             else:

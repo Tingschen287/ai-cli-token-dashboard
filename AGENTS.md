@@ -78,7 +78,11 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   余额在 `/api/subscription/self`（钱包 quota 恒为 0），无订阅站回退钱包
   quota，展示币种跟 `/api/status` 走（JWIPC 是 CNY）；sk- key 是无限令牌、
   不配令牌时只有 billing 接口的累计已用）、grok（CLI 内部 billing 接口，
-  OIDC token 从 `~/.grok/auth.json` 复用/refresh）。单家失败沿用旧数据。
+  OIDC token 从 `~/.grok/auth.json` 复用/refresh）、xai（xAI Management API
+  查团队 API key 的本月实付：读 `~/.grok/xai-management-key.env` 的
+  `XAI_MANAGEMENT_KEY`/`XAI_TEAM_ID`，用量分析按 `api_key_id` 分组，本机 key
+  靠列表 `redactedApiKey` 尾四位与 `~/.grok/xai-api-key.env` 的 key 尾缀匹配
+  识别；普通团队 key 调不通，必须 Management Key）。单家失败沿用旧数据。
   codex 不走这里（见上）。
 - kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
   `https://api.kimi.com/coding/v1/usages` 接口（同一账号），认证用
@@ -218,9 +222,11 @@ feat/fix/style/refactor）。
    老 pro 是 primary=周窗；现在 team 是 primary=5h（300 分钟）、secondary=周窗
    （10080 分钟）。`>1440` 分钟才标 `week`，否则一律 `5h`。按字段名硬编码会把
    周额度显示成 5 小时，重置时间也会走短窗的「只显示时刻」。
-9. 费用：grok 记 `costUsdTicks`（按 1e-9 USD/tick 推定，**名义**值）；opencode 的
-   `cost` 字段是它按 provider 报价算的 USD 实估值，同样只作参考。其余来源没有
-   费用字段。这是消耗看板，不是账单看板。
+9. 费用：`cost_ticks` 统一 **1 USD = 1e10 ticks**（xAI 官方口径，2026-09 起；
+   曾误按 1e-9 USD/tick 折算导致虚高 10 倍）。grok 记 `costUsdTicks`：API key
+   调用是实际计费，OAuth/订阅会话是名义价值；opencode 的 `cost` 字段是它按
+   provider 报价算的 USD 实估值，折成 cost_ticks 复用。其余来源没有费用字段。
+   这是消耗看板，不是账单看板。
 
 ## VPS 流量：两个口径不能混
 
@@ -253,7 +259,8 @@ vnstat 只能从装的那天起记，之前的日子按 `user × 倍数` 估算�
   确认没有不该外传的内容。`.gitignore` 里 `*.json` 也是同理（`--json` 导出物）。
 - 静态扫描完全离线；唯一联网行为是 `--serve` 模式的额度轮询（读各平台 token：
   `~/.claude-official/.credentials.json`、`~/.cc-switch/cc-switch.db`、
-  `~/.grok/auth.json`、`~/.kimi-code/credentials/kimi-code.json`）。grok 和 kimi 的
+  `~/.grok/auth.json`、`~/.grok/xai-management-key.env`（Management Key 与
+  team ID）、`~/.kimi-code/credentials/kimi-code.json`）。grok 和 kimi 的
   refresh 都会写回各自凭证文件（先重读合并、chmod 600），修改这段逻辑时注意
   不要顶掉 CLI 自己的登录态。
 - grok 额度走未公开的 CLI 内部 billing 接口，字段可能随时变化，解析必须容错。

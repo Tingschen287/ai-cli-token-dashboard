@@ -113,9 +113,9 @@ function windowTotals(view = state.view, weeks = state.weeks) {
 function winSub(d) {
   const extra = [];
   if (d.reasoning) extra.push(`reason ${human(d.reasoning)}`);
-  // ticks 单位按 1e-9 USD 推定；grok 是订阅登录，这只是名义价值
+  // xAI 官方口径：1 USD = 1e10 ticks。API key 调用是实际计费；OAuth 订阅会话是名义价值
   if (d.cost_ticks) {
-    const usd = d.cost_ticks / 1e9;
+    const usd = d.cost_ticks / 1e10;
     // 单日窗口下金额常常不足 $1，取整会全变成 $0
     extra.push(`≈$${usd.toFixed(usd >= 10 ? 0 : 2)}`);
   }

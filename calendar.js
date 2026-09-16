@@ -72,8 +72,13 @@ function quotaInline(key) {
     // kimi code 官方账号额度（CLI 的 OAuth 凭证轮询 /v1/usages），同 cco 处理
     out = Q.kimi.windows.map(w => quotaGroup(key, w, true, false)).join('');
   } else if (key === 'grok' && Q.grok) {
-    // grok 只有周额度一个窗口（CLI 内部 billing 接口），同 cco 处理
+    // grok 只有周额度一个窗口（CLI 内部 billing 接口），同 cco 处理；
+    // 另挂团队 API key 的本月实付（xAI Management API，没配 Management Key 就没有 Q.xai）
     out = Q.grok.windows.map(w => quotaGroup(key, w, true, false)).join('');
+    const x = Q.xai;
+    if (x && typeof x.key_spend === 'number') {
+      out += ` <span class="qspend" data-tip="${x.key_name || 'api-key'} · 本月 API key 实付 $${x.key_spend.toFixed(2)} / 全队 $${(x.team_spend ?? 0).toFixed(2)}">key $${x.key_spend.toFixed(2)}</span>`;
+    }
   } else if (key === 'ccs' && Q.ccs) {
     // Kimi 的额度条已挪到 kimi code 行（同一账号），MiniMax 是部门套餐在弹窗里；
     // ccs 行是内网 new-api 网关：配了面板访问令牌显示订阅余额，否则只有累计已用。
