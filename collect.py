@@ -438,6 +438,46 @@ def blank():
             "input": 0, "reasoning": 0, "msgs": 0, "cost_ticks": 0}
 
 
+# OpenCode Zen 免费模型（muse-spark）没有公开限额接口，超限报
+# rate_limit_exceeded（服务端日志可查）。撞墙日已用量就是限额的下界样本，
+# 多日取均值当估计分母；前端拿它算「今日已用百分比」。
+ZEN_FREE_MODEL = "muse-spark-1.3-contributor-free"
+_ZEN_CACHE = {"sig": None, "days": frozenset()}
+
+
+def zen_hit_days(root):
+    """opencode.log 里 rate_limit_exceeded 出现过的本地日期集合。
+
+    日志是追加式单文件，按 (mtime, size) 缓存解析结果；时间戳是 UTC，
+    转本地日期才能对齐会话扫描的日粒度。
+    """
+    log = root / "log" / "opencode.log"
+    try:
+        st = log.stat()
+    except OSError:
+        return frozenset()
+    sig = (st.st_mtime_ns, st.st_size)
+    if _ZEN_CACHE["sig"] == sig:
+        return _ZEN_CACHE["days"]
+    days = set()
+    try:
+        with log.open(errors="ignore") as f:
+            for line in f:
+                # 服务端有过两种文案：带 [rate_limit_exceeded] code 的和纯文本的
+                low = line.lower()
+                if "rate_limit_exceeded" not in low and "rate limit exceeded" not in low:
+                    continue
+                try:
+                    t = datetime.strptime(line[10:29], "%Y-%m-%dT%H:%M:%S")
+                except ValueError:
+                    continue
+                days.add(t.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d"))
+    except OSError:
+        return frozenset()
+    _ZEN_CACHE.update(sig=sig, days=frozenset(days))
+    return _ZEN_CACHE["days"]
+
+
 def accumulate(bucket, row):
     bucket["input"] += row.input
     bucket["output"] += row.output
@@ -507,6 +547,23 @@ def collect():
             q = codex_quota(root)
             if q:
                 meta[key]["quota"] = q
+        # oc 的免费模型限额无接口，用日志撞墙日的已用量均值当估计分母。
+        # 口径用全部 token（含缓存读）：Zen 服务端按全 token 计量限额，
+        # 与看板主指标 incr（不含缓存读）不同，前端分子也按同一口径加总。
+        if key == "oc" and root.is_dir():
+            days = zen_hit_days(root)
+            vals = []
+            for day in sorted(days):
+                b = models.get((day, key, ZEN_FREE_MODEL))
+                if b and b["msgs"]:
+                    vals.append(b["incr"] + b["cache_read"] + b["reasoning"])
+            if vals:
+                meta[key]["zen_limit"] = {
+                    "model": ZEN_FREE_MODEL,
+                    "avg_tokens": round(sum(vals) / len(vals)),
+                    "samples": len(vals),
+                    "hit_days": sorted(days),
+                }
 
     def flatten(source, fields):
         out = []
@@ -578,6 +635,30 @@ def render(payload, target):
 QUOTA_INTERVAL = 180   # 3 分钟；额度变化慢，频繁查询无意义还容易被限流
 CCS_DB = Path.home() / ".cc-switch" / "cc-switch.db"
 CCO_CREDENTIALS = Path.home() / ".claude-official" / ".credentials.json"
+# new-api 网关的面板「系统访问令牌」：base_url -> token，与 Key 同样不进 git。
+NEWAPI_CONF = Path(__file__).resolve().parent / "newapi.local.json"
+_NEWAPI_CACHE = {"sig": None, "tokens": {}}
+
+
+def _newapi_access_tokens():
+    """有令牌才能查 new-api 账号层（订阅余额）；按 (mtime, size) 缓存热读。"""
+    try:
+        st = NEWAPI_CONF.stat()
+    except OSError:
+        return {}
+    sig = (st.st_mtime_ns, st.st_size)
+    if _NEWAPI_CACHE["sig"] == sig:
+        return _NEWAPI_CACHE["tokens"]
+    tokens = {}
+    try:
+        data = json.loads(NEWAPI_CONF.read_text(encoding="utf-8"))
+        for base, tok in (data.get("tokens") or {}).items():
+            if isinstance(tok, str) and tok.strip():
+                tokens[str(base).rstrip("/")] = tok.strip()
+    except (ValueError, OSError, AttributeError):
+        tokens = {}
+    _NEWAPI_CACHE.update(sig=sig, tokens=tokens)
+    return tokens
 
 
 def _http_get_json(url, headers, timeout=8):
@@ -613,12 +694,22 @@ def quota_cco():
     return {"windows": windows} if windows else None
 
 
+def _is_private_host(base):
+    """内网自建网关（new-api 部署）按私网地址识别；云厂商 URL 不在其中。"""
+    from urllib.parse import urlparse
+    host = (urlparse(base).hostname or "")
+    if host.count(".") != 3:
+        return False
+    a, b = (int(x) if x.isdigit() else -1 for x in host.split(".")[:2])
+    return (a == 10 or (a == 172 and 16 <= b <= 31) or (a == 192 and b == 168)) and 0 <= b <= 255
+
+
 def _ccs_quota_providers():
     """cc-switch 库里有额度接口的 claude 供应商。
 
     Kimi 的额度条已挪到 kimi code 行（同一账号、同一个 /v1/usages 接口，
-    只是认证换成 CLI 的 OAuth token），这里只剩 MiniMax；腾云智算这类没有
-    额度接口的供应商不出现在列表里。
+    只是认证换成 CLI 的 OAuth token）；MiniMax 是部门套餐、在弹窗里，与
+    cc-switch 个人供应商无关。私网地址的供应商按 new-api 处理。
     """
     if not CCS_DB.is_file():
         return []
@@ -639,8 +730,8 @@ def _ccs_quota_providers():
             continue
         base = env.get("ANTHROPIC_BASE_URL") or ""
         token = env.get("ANTHROPIC_AUTH_TOKEN") or ""
-        if "minimax" in base.lower() and token:
-            out.append({"name": name, "kind": "minimax", "base": base, "token": token})
+        if base and token and _is_private_host(base):
+            out.append({"name": name, "base": base, "token": token})
     return out
 
 
@@ -667,47 +758,70 @@ def _quota_kimi(base, token):
     return windows
 
 
-def _quota_minimax(token):
-    # 接口只给剩余百分比（部分套餐给原始计数），统一换算成已用百分比
-    d = _http_get_json("https://www.minimaxi.com/v1/token_plan/remains", {
+def _quota_newapi(base, token, access_token=None):
+    """new-api 网关：sk- key 只能到令牌层，billing/usage 的 total_usage 是
+    美分、只有累计已用。面板「系统访问令牌」才到账号层：订阅制站点的余额在
+    /api/subscription/self（钱包 quota 恒为 0），无订阅的充值站回退钱包
+    quota；展示单位跟 /api/status 站点配置走（quota_per_unit /
+    quota_display_type），不硬编码人民币。"""
+    root = base.rstrip("/")
+    out = {}
+    d = _http_get_json(root + "/v1/dashboard/billing/usage", {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "User-Agent": "claude-cli/2.1.150",
+        "Accept": "application/json",
+        "User-Agent": "Token-Dashboard/1.0",
     })
-    models = d.get("model_remains") or []
-    m = next((x for x in models if x.get("model_name") == "general"),
-             models[0] if models else None)
-    if not m:
-        return []
-
-    def used_pct(rem_key, tot_key, used_key):
-        rem = m.get(rem_key)
-        if rem is not None:
-            return max(0, 100 - int(rem))
-        tot, used = m.get(tot_key) or 0, m.get(used_key) or 0
-        return round(used * 100 / tot) if tot else None
-
-    windows = []
-    p5 = used_pct("current_interval_remaining_percent",
-                  "current_interval_total_count", "current_interval_usage_count")
-    if p5 is not None:
-        windows.append({"key": "5h", "pct": p5, "reset_ms": m.get("end_time") or 0})
-    pw = used_pct("current_weekly_remaining_percent",
-                  "current_weekly_total_count", "current_weekly_usage_count")
-    if pw is not None:
-        windows.append({"key": "week", "pct": pw,
-                        "reset_ms": m.get("weekly_end_time") or 0})
-    return windows
+    cents = d.get("total_usage")
+    if isinstance(cents, (int, float)) and not isinstance(cents, bool):
+        out["spend"] = round(cents / 100, 2)
+    if not access_token:
+        return out or None
+    auth = {"Authorization": access_token, "Accept": "application/json",
+            "User-Agent": "Token-Dashboard/1.0"}
+    user = (_http_get_json(root + "/api/user/self", auth).get("data") or {})
+    sub = None
+    try:
+        subs = (_http_get_json(root + "/api/subscription/self", auth)
+                .get("data") or {}).get("subscriptions") or []
+        sub = next((s["subscription"] for s in subs
+                    if isinstance(s.get("subscription"), dict)
+                    and s["subscription"].get("status") == "active"), None)
+    except Exception:
+        sub = None
+    quota = user.get("quota") if isinstance(user.get("quota"), (int, float)) else 0
+    used_q = user.get("used_quota") if isinstance(user.get("used_quota"), (int, float)) else 0
+    if sub is not None:
+        total_q, sub_used = sub.get("amount_total") or 0, sub.get("amount_used") or 0
+        remain_q, expire = total_q - sub_used, sub.get("end_time") or 0
+    else:
+        remain_q, total_q, expire = quota, quota + used_q, 0
+    conf = {}
+    try:
+        conf = _http_get_json(root + "/api/status", auth).get("data") or {}
+    except Exception:
+        conf = {}
+    per_unit = conf.get("quota_per_unit") or 500000
+    rate = (conf.get("usd_exchange_rate") or 1) if conf.get("quota_display_type") == "CNY" else 1
+    scale = lambda q: round(q / per_unit * rate, 2)
+    balance = {"total": scale(remain_q), "plan_total": scale(total_q),
+               "used": scale(total_q - remain_q)}
+    if expire > 0:
+        balance["expire_at"] = expire
+    out.update(balance=balance, currency="CNY" if conf.get("quota_display_type") == "CNY" else "USD",
+               # 账号级累计已用覆盖该账号全部令牌，比令牌层 billing 更全。
+               spend=scale(used_q))
+    return out
 
 
 def quota_ccs():
-    """Kimi 和 MiniMax 并行语义（顺序调用但都独立容错），单家失败不拖垮整组。"""
+    """new-api 网关的订阅余额或累计已用（失败单独报错不拖垮整组）。"""
+    tokens = _newapi_access_tokens()
     out = []
     for p in _ccs_quota_providers():
         try:
-            windows = (_quota_kimi(p["base"], p["token"]) if p["kind"] == "kimi"
-                       else _quota_minimax(p["token"]))
-            out.append({"name": p["name"], "windows": windows, "error": None})
+            access = tokens.get(p["base"].rstrip("/"))
+            out.append({"name": p["name"], "windows": [], "error": None,
+                        **(_quota_newapi(p["base"], p["token"], access) or {})})
         except Exception as exc:
             out.append({"name": p["name"], "windows": [], "error": str(exc)[:80]})
     return {"providers": out} if out else None

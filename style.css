@@ -319,6 +319,7 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .qinline .qbar i { display: block; height: 100%; border-radius: 3px; }
 .qinline .qn { font-weight: 600; }
 .qinline .qerr { font-style: italic; }
+.qinline .qspend { font-weight: 600; }
 /* ccs 两家供应商四个窗口一行排开：供应商名粗体在前，5h/周进度条紧随其后 */
 .qinline-ccs { column-gap: 8px; }
 

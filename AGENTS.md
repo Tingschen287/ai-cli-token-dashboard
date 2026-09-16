@@ -22,6 +22,7 @@
 | `coding_plans.py` | 部门个人套餐的独立采集模块；四家官方额度 / 余额接口，凭据与原始响应不出后端 |
 | `coding-plans.js` | 标题旁 Coding Plan 按钮、部门额度 dialog、独立刷新和低余额提醒 |
 | `coding-plans.local.json.example` | 多账号凭据模板；实际 `.json` 已忽略，禁止提交 |
+| `newapi.local.json.example` | ccs 行 new-api 订阅余额的面板访问令牌模板；实际 `.json` 已忽略 |
 | `test_coding_plans.py` | 额度解析、旧值保留和凭据隔离回归测试，使用虚构数据 |
 | `cache_compare.py` | 独立小脚本：对比 K3 在 kimi 官方接入与 cc-switch 转发下的缓存命中率，复用 `collect.py` 的解析器 |
 | `template.html` | 前端骨架模板（约 110 行）：HTML + 三个占位符 `/*__STYLE__*/`、`/*__APP__*/`、`/*__DATA__*/null` |
@@ -66,10 +67,17 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
 - `collect()`：聚合产出 `daily` / `models` / `projects`（都带 date 维度，供前端
   按时间窗口重新聚合；`projects` 还带 model 维度——按项目面板的分段是模型）和
   `profiles` 总量。codex 的额度（rollout 文件自带的 `rate_limits`）在扫描时
-  顺手读最新文件尾部，挂进 `meta["codex"]["quota"]`，纯本地不联网。
+  顺手读最新文件尾部，挂进 `meta["codex"]["quota"]`，纯本地不联网。oc 的
+  `meta["oc"]["zen_limit"]` 同理：Zen 免费模型无限额接口，扫 `opencode.log`
+  里的限额报错日，取那些日 muse-spark 全 token 用量（含缓存读）的均值当
+  估计分母，日志按 (mtime, size) 缓存。
 - 额度轮询（仅 `--serve` 模式联网）：`QuotaPoller` 后台线程每 180 秒轮询
-  cco（Anthropic OAuth `/api/oauth/usage`）、ccs（cc-switch 库里的 MiniMax
-  供应商，读 `~/.cc-switch/cc-switch.db` 拿 token）、grok（CLI 内部 billing 接口，
+  cco（Anthropic OAuth `/api/oauth/usage`）、ccs（cc-switch 库里私网地址的
+  供应商按 new-api 处理，读 `~/.cc-switch/cc-switch.db` 拿 token；配了
+  `newapi.local.json` 里面板「系统访问令牌」的加查账号层——订阅制站点的
+  余额在 `/api/subscription/self`（钱包 quota 恒为 0），无订阅站回退钱包
+  quota，展示币种跟 `/api/status` 走（JWIPC 是 CNY）；sk- key 是无限令牌、
+  不配令牌时只有 billing 接口的累计已用）、grok（CLI 内部 billing 接口，
   OIDC token 从 `~/.grok/auth.json` 复用/refresh）。单家失败沿用旧数据。
   codex 不走这里（见上）。
 - kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
@@ -84,6 +92,7 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   查询；`/api/coding-plans?refresh=1` 唤醒采集（最短间隔 15 秒），只在内存留快照。
   返回值严格白名单，错误仅用固定文案。换 Key、删除账号不能沿用另一账号的旧值。
   MiniMax 的 `remaining_percent` 优先于零计数；GLM 支持实际返回的 `CREDIT_LIMIT`。
+  JWIPC 是 cc-switch 个人的网关额度，不进部门弹窗，走 ccs 行（见上）。
 - `serve()`：`http.server.ThreadingHTTPServer`，含 `/api/data`、`/api/coding-plans`、
   首页与 `/healthz`；本地凭据文件没有 HTTP 路由。
 

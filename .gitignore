@@ -9,6 +9,9 @@ vps.local.json
 # Coding Plan 查询凭据：仅供本机后端读取，禁止提交
 coding-plans.local.json
 
+# new-api 面板访问令牌：仅供本机后端读取，禁止提交
+newapi.local.json
+
 __pycache__/
 *.py[cod]
 

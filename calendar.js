@@ -44,6 +44,25 @@ function quotaInline(key) {
     const out = q.windows.map(w => quotaGroup(key, w, true, false)).join('');
     return out ? `<span class="qinline"${q.plan ? ` data-tip="plan: ${q.plan}"` : ''}>${out}</span>` : '';
   }
+  if (key === 'oc') {
+    // Zen 免费模型无限额接口：分母是 collect 从日志撞墙日估出的均值，
+    // 分子是今日 muse 用量（全 token 口径，与分母一致）。
+    const p = (DATA.profiles || []).find(x => x.key === 'oc');
+    const z = p && p.zen_limit;
+    if (!z) return '';
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const m = (DATA.models || []).find(r => r.date === today && r.profile === 'oc' && r.model === z.model);
+    const used = m ? m.incr + m.cache_read + m.reasoning : 0;
+    const pct = Math.min(100, Math.round(used / z.avg_tokens * 100));
+    const fmt = n => (n / 1e6).toFixed(1) + 'M';
+    const tip = `估计限额 ${fmt(z.avg_tokens)}（${z.samples} 个撞墙日均值，含缓存读）· 今日已用 ${fmt(used)}`;
+    return `<span class="qinline"><span class="qgrp" data-tip="${tip}">
+      <span class="qw">zen</span>
+      <span class="qbar"><i style="width:${pct}%;background:${COLORS.oc}"></i></span>
+      <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
+    </span></span>`;
+  }
   const Q = DATA.quota;
   if (!Q) return '';
   let out = '';
@@ -56,19 +75,34 @@ function quotaInline(key) {
     // grok 只有周额度一个窗口（CLI 内部 billing 接口），同 cco 处理
     out = Q.grok.windows.map(w => quotaGroup(key, w, true, false)).join('');
   } else if (key === 'ccs' && Q.ccs) {
-    // Kimi 的额度条已挪到 kimi code 行（同一账号），ccs 这里只剩 MiniMax 一家
-    // 有额度，不带供应商标签也不会歧义（用户明确不要）；供应商名由 quotaGroup
-    // 的悬停气泡携带。一行排开不换行（用户明确要求）。
+    // Kimi 的额度条已挪到 kimi code 行（同一账号），MiniMax 是部门套餐在弹窗里；
+    // ccs 行是内网 new-api 网关：配了面板访问令牌显示订阅余额，否则只有累计已用。
     const cells = [];
     Q.ccs.providers.forEach(prov => {
-      const isMmx = /^minimax$/i.test(prov.name);
-      const short = isMmx ? 'Minimax' : prov.name.replace(/\s*For Coding\s*/i, '');
-      const color = isMmx ? BRAND.minimax.color : null;
+      const short = prov.name.replace(/\s*API\s*$/i, '').replace(/\s*For Coding\s*/i, '');
+      if (prov.balance && typeof prov.balance.total === 'number') {
+        const b = prov.balance;
+        const sign = prov.currency === 'CNY' ? '¥' : '$';
+        const pct = b.plan_total > 0 ? Math.min(100, Math.round(b.used / b.plan_total * 100)) : 0;
+        const exp = b.expire_at ? ` · 到期 ${new Date(b.expire_at * 1000).toLocaleDateString('zh-CN')}` : '';
+        cells.push(`<span class="qgrp" data-tip="${short} · 订阅余额 ${sign}${b.total} / 套餐 ${sign}${b.plan_total}（已用 ${sign}${b.used}）${exp} · 累计已用 ${sign}${prov.spend}">
+          <span class="qw">plan</span>
+          <span class="qbar"><i style="width:${pct}%;background:${COLORS[key]}"></i></span>
+          <span class="qn" style="color:${pctColor(pct)}">${sign}${b.total}</span>
+        </span>`);
+        return;
+      }
+      if (typeof prov.spend === 'number') {
+        const sign = prov.currency === 'CNY' ? '¥' : '$';
+        const val = prov.spend.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        cells.push(`<span class="qspend" data-tip="${short} · new-api 累计已用（无限额度令牌，无余额）">${sign}${val}</span>`);
+        return;
+      }
       if (prov.error && !prov.windows.length) {
         cells.push(`<span class="qerr" data-tip="${short}: ${prov.error}">${short}: ${prov.error}</span>`);
-      } else {
-        prov.windows.forEach(w => cells.push(quotaGroup(key, w, true, prov.stale, color, short)));
+        return;
       }
+      prov.windows.forEach(w => cells.push(quotaGroup(key, w, true, prov.stale, null, short)));
     });
     return `<span class="qinline qinline-ccs">${cells.join('')}</span>`;
   }
