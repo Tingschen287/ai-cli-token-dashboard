@@ -13,7 +13,7 @@
 | `kimi` | Kimi | `~/.kimi-code` | Kimi Code CLI 官方接入 |
 | `codex` | ChatGPT | `~/.codex` | Codex CLI |
 | `ccs` | CC-Switch | `~/.claude` | Claude Code 经 CC-Switch 走第三方 |
-| `grok` | Grok | `~/.grok` | Grok CLI |
+| `grok` | Grok | `~/.grok,~/.grok-team` | Grok CLI（个人 + 团队两套目录合并成一行） |
 | `oc` | OpenCode | `~/.local/share/opencode` | OpenCode（SQLite 存储） |
 
 > **不消耗 token**：只读本地 jsonl 文件，不联网、不调 API。刷新多少次都是零费用。
@@ -144,7 +144,7 @@ python3 collect.py --serve
 **claude** —— `<dir>/projects/<项目>/<会话>.jsonl`
 每行一条 assistant 消息，用量在 `message.usage`。
 
-**grok** —— `<dir>/sessions/<urlencode(cwd)>/<会话>/updates.jsonl`
+**grok / grok-team** —— `<dir>/sessions/<urlencode(cwd)>/<会话>/updates.jsonl`
 `turn_completed` 事件的 `params.update.usage`，一条 = 一次提问的整个 agent loop，
 还带 `modelUsage` 分模型拆分、`reasoningTokens` 和 `costUsdTicks`。
 
@@ -208,7 +208,10 @@ Esc 或 ✕ 关掉。遮罩里有独立的视图和范围切换，不影响主�
 cco / ccs / grok / kimi 走后端慢轮询（仅服务模式；kimi 用 CLI 的 OAuth 凭证访问
 官方 `/v1/usages`），codex 直接从会话文件里读。grok 行在配好 xAI Management
 Key（`~/.grok/xai-management-key.env`）后，还会额外显示本机团队 API key 的
-本月实付（悬停看全队合计）。
+本月实付（悬停看全队合计）。cco / codex / grok 行悬停额度条时会附「窗口上限 ~X」：撞墙时刻
+往前一个窗口的用量均值（cco 周窗无报错样本时用当前 ≥90% 的高水位窗口补），
+是套餐窗口 token 上限的估计值，不是官方数字。仅统计当前套餐（换过套餐的
+从切换日起算）。
 没有色阶图例——「越深越多」看格子本身就够直观。
 
 排行榜不按高度裁行数——放不下就滚动（裁掉的长尾根本看不到）。
@@ -329,11 +332,14 @@ vnstat 只能从装的那天起记，装之前的日子按 `S-UI × 倍数` 估�
 
 ## 关于费用
 
-Grok 记了 `costUsdTicks`，按 **xAI 官方口径 1 USD = 1e10 ticks** 折算（2026-09
-经 Management API 账单核对确认，此前误按 1e-9 USD/tick 估算、虚高 10 倍）。API
-key 直连的调用是实际计费；OAuth 订阅会话（`auth_method: session`）是名义价值，
-不等于实际扣费。OpenCode 的 `cost` 字段是它按 provider 报价算的
-USD 实估值，同样只作参考——你的实际套餐/免费额度它并不知道。
+格子 / 行标题 / 两张合计卡的悬停统一显示：**输入**（非缓存）、**输出**（含
+reasoning）、**成本**、缓存读、命中率。成本口径：Grok 用会话记录的
+`costUsdTicks`，按 **xAI 官方口径 1 USD = 1e10 ticks** 折算（2026-09 经
+Management API 账单核对确认，此前误按 1e-9 USD/tick 估算、虚高 10 倍）——API
+key 直连是实际计费，OAuth 订阅会话是名义价值；**其余来源（含 OpenCode）**按
+[Artificial Analysis](https://artificialanalysis.ai/models) 价格表估价（输入 +
+输出 + 缓存读 + 缓存写，无缓存写价的按输入价计），悬停带 `≈` 标记。你的实际
+套餐 / 免费额度 / 折扣估价并不知道——这是消耗看板，不是账单看板。
 
 Claude 侧完全无法算钱：官方账号是订阅制；第三方经 CC-Switch 代理，真实计费在代理
 侧，本地 jsonl 只有 token 数没有单价，且 MiniMax / GLM / k3 价格各不相同。

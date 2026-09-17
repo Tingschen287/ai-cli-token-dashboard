@@ -37,15 +37,18 @@ PROFILES = [
     {"key": "kimi",  "label": "Kimi",            "dir": "~/.kimi-code",       "format": "kimi"},
     {"key": "codex", "label": "ChatGPT",         "dir": "~/.codex",           "format": "codex"},
     {"key": "ccs",   "label": "CC-Switch",       "dir": "~/.claude",          "format": "claude"},
-    {"key": "grok",  "label": "Grok",            "dir": "~/.grok",            "format": "grok"},
+    # grok 一个看板行并两套 CLI 配置：个人 SuperGrok + 团队（dir 逗号分隔）
+    {"key": "grok",  "label": "Grok",            "dir": "~/.grok,~/.grok-team", "format": "grok"},
     {"key": "oc",    "label": "OpenCode",        "dir": "~/.local/share/opencode", "format": "opencode"},
 ]
 
 HERE = Path(__file__).resolve().parent
 
-# 一条标准化记录：两种解析器都产出这个形状，下游只认它
+# 一条标准化记录：两种解析器都产出这个形状，下游只认它。
+# ts 是 epoch 秒（0=未知）：撞墙窗口估计需要小时级滚动聚合，日粒度 date 不够用
 Row = collections.namedtuple(
-    "Row", "dedup_key date model project input output cache_write cache_read reasoning calls cost_ticks")
+    "Row", "dedup_key date model project input output cache_write cache_read reasoning calls cost_ticks ts",
+    defaults=(0,))
 
 
 def _local_date(value):
@@ -65,6 +68,21 @@ def _local_date(value):
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone().date().isoformat()
+
+
+def _epoch(value):
+    """ISO 串或 unix 秒/毫秒 → epoch 秒；无法解析返回 0（撞墙窗口聚合会跳过 0）。"""
+    if isinstance(value, (int, float)):
+        return value / 1000 if value > 1e11 else value
+    if not value:
+        return 0
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return 0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.timestamp()
 
 
 def parse_claude_file(path):
@@ -110,6 +128,7 @@ def parse_claude_file(path):
                 reasoning=0,
                 calls=1,
                 cost_ticks=0,
+                ts=_epoch(rec.get("timestamp")),
             ))
     return rows, raw
 
@@ -164,6 +183,7 @@ def parse_grok_file(path):
                     reasoning=mu.get("reasoningTokens") or 0,
                     calls=mu.get("modelCalls") or 0,
                     cost_ticks=mu.get("costUsdTicks") or 0,
+                    ts=_epoch(rec.get("timestamp")),
                 ))
     return rows, raw
 
@@ -218,6 +238,7 @@ def parse_kimi_file(path):
                 reasoning=0,
                 calls=1,
                 cost_ticks=0,
+                ts=t / 1000 if isinstance(t, (int, float)) else 0,
             ))
     return rows, raw
 
@@ -280,6 +301,7 @@ def parse_codex_file(path):
                 reasoning=usage.get("reasoning_output_tokens") or 0,
                 calls=1,
                 cost_ticks=0,
+                ts=_epoch(rec.get("timestamp")),
             ))
     return rows, raw
 
@@ -335,6 +357,7 @@ def parse_opencode_file(path):
                 # opencode 的 cost 是 USD 实估值；cost_ticks 统一 1 USD=1e10 ticks
                 # （xAI 官方口径），前端 /1e10 还原。
                 cost_ticks=round((d.get("cost") or 0) * 1e10),
+                ts=t / 1000 if isinstance(t, (int, float)) else 0,
             ))
     except sqlite3.Error:
         pass
@@ -480,6 +503,196 @@ def zen_hit_days(root):
     return _ZEN_CACHE["days"]
 
 
+# ---------- 撞墙窗口估计（口径 A：撞墙时刻往前的滚动窗口） ----------
+# 个人套餐（cco 5h/周、codex credits、grok 周额度）没有公开的窗口 token 上限，
+# 撞墙时刻往前一个窗口的用量就是该窗口实际消耗的极限样本，多次撞墙取均值。
+# 用量口径与 zen 一致：全 token（增量 + 缓存读 + reasoning），因为各家的窗口
+# 计量都把缓存读算进去。
+
+_TAIL_CACHE = {}  # path -> (consumed_bytes, [hit, ...])
+
+
+def _tail_hits(path, match):
+    """append-only 文件的增量撞墙扫描：记住已消费字节，只解析新增行。"""
+    try:
+        st = path.stat()
+        consumed, hits = _TAIL_CACHE.get(str(path), (0, []))
+    except OSError:
+        return []
+    if consumed == st.st_size:
+        return hits
+    try:
+        with path.open("rb") as f:
+            if st.st_size < consumed:      # 文件被截断/轮转，重头扫
+                f.seek(0)
+                consumed, hits = 0, []
+            else:
+                f.seek(consumed)
+            data = f.read()
+    except OSError:
+        return hits
+    if data and not data.endswith(b"\n"):  # 尾部半行留到下一轮
+        nl = data.rfind(b"\n")
+        data = data[:nl + 1] if nl >= 0 else b""
+    fresh = list(hits)
+    for line in data.decode("utf-8", "ignore").splitlines():
+        hit = match(line)
+        if hit is not None:
+            fresh.append(hit)
+    _TAIL_CACHE[str(path)] = (consumed + len(data), fresh)
+    return fresh
+
+
+def claude_limit_hits(root):
+    """cco：assistant 报错行 'You've hit your (session|weekly) limit'。
+    同一窗口的连环报错按文案里的 resets 时刻去重，返回 [(epoch, is_weekly)]。"""
+    out = {}
+
+    def match(line):
+        if "isApiErrorMessage" not in line or "hit your" not in line:
+            return None
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        text = d.get("message", {}).get("content") or ""
+        if isinstance(text, list):
+            text = " ".join(x.get("text", "") for x in text if isinstance(x, dict))
+        if "limit" not in text:
+            return None
+        ts = _epoch(d.get("timestamp"))
+        if not ts:
+            return None
+        reset = next((w for w in text.replace("·", " ").split() if ":" in w and "resets" not in w), "")
+        return (ts, "week" if "weekly" in text.lower() else "5h",
+                f"{reset}|{ts // 3600 // 6}")
+
+    for path in root.glob("projects/**/*.jsonl"):
+        for ts, weekly, key in _tail_hits(path, match):
+            out.setdefault(key, (ts, weekly))
+    return list(out.values())
+
+
+def codex_limit_hits(root):
+    """codex：三类撞墙信号归一化为 (epoch, '5h'|'week')。
+
+    1. rate_limits 的 primary/secondary used_percent ≥99（5h/周窗打满），
+       按 resets_at 去重——同一窗口反复采样只算一次；
+    2. rate_limit_reached_type 非空（Team 时期 credits 耗尽），归入触发时
+       已打满的那个窗，按小时去重。
+    """
+    out = {}
+
+    def match(line):
+        if '"rate_limits"' not in line:
+            return None
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        rl = (d.get("payload") or {}).get("rate_limits") or {}
+        ts = _epoch(d.get("timestamp"))
+        if not ts:
+            return None
+        found = []
+        for w, kind in ((rl.get("primary"), "5h"), (rl.get("secondary"), "week")):
+            if not w or w.get("window_minutes") not in (300, 10080):
+                continue
+            expect = 300 if kind == "5h" else 10080
+            if w.get("window_minutes") != expect:
+                kind = "week" if w.get("window_minutes") == 10080 else "5h"
+            if (w.get("used_percent") or 0) >= 99:
+                # resets_at 相同 = 同一个窗口实例，去重
+                found.append((ts, kind, f"{kind}:{w.get('resets_at')}"))
+        if rl.get("rate_limit_reached_type"):
+            found.append((ts, "week", f"credits:{ts // 3600}"))
+        return found or None
+
+    for path in root.glob("sessions/*/*/*/rollout-*.jsonl"):
+        for group in _tail_hits(path, match):
+            for ts, kind, key in group:
+                out.setdefault(key, (ts, kind))
+    return sorted(out.values())
+
+
+def grok_limit_hits(root):
+    """grok：retry_state failed 且报错文案是限额类（余额耗尽 / 消费上限 /
+    限流）。同一小时去重，返回 [(epoch, False)]。"""
+    out = set()
+
+    def match(line):
+        low = line.lower()
+        if '"retry_state"' not in low or '"failed"' not in low:
+            return None
+        if not any(s in low for s in ("balance exhausted", "spending-limit", "rate limit", "quota")):
+            return None
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            return None
+        ts = _epoch(d.get("timestamp"))
+        return ts or None
+
+    for path in root.glob("sessions/*/*/updates.jsonl"):
+        for ts in _tail_hits(path, match):
+            out.add(ts // 3600)
+    return [(h * 3600, "week") for h in sorted(out)]
+
+
+# 来源 → [(窗口标签, 窗口秒数, 扫描函数, 只取周窗样本)]；cco 两窗都估
+# 第 4 项是样本过滤 kind：与扫描器返回的 (epoch, kind) 匹配，None = 全收
+LIMIT_SPECS = {
+    "cco": [("5h", 5 * 3600, claude_limit_hits, "5h"),
+            ("week", 7 * 86400, claude_limit_hits, "week")],
+    "codex": [("5h", 5 * 3600, codex_limit_hits, "5h"),
+              ("week", 7 * 86400, codex_limit_hits, "week")],
+    "grok": [("week", 7 * 86400, grok_limit_hits, "week")],
+}
+# 套餐切换日：之前的撞墙属于旧套餐（额度不同），不当样本。换套餐时改这里。
+LIMIT_SINCE = {
+    "cco": "2026-09-10",    # 09-10 起从个人 Pro 切到 Team
+    "codex": "2026-09-03",  # 之前是 Pro，现在是 Plus（credits 口径不同）
+}
+
+
+def est_limit(key, roots, rows_ts):
+    """滚动窗口均值：对每次撞墙 t 取 [t-窗口, t] 的全 token 合计，多样本取均值。
+    rows_ts 是该来源 (epoch, 全token) 的有序列表，前缀和 + bisect 求区间和。"""
+    import bisect
+    result = {}
+    if not rows_ts:
+        return result
+    since = LIMIT_SINCE.get(key)
+    since_ts = _epoch(since + "T00:00:00") if since else 0
+    times = [t for t, _ in rows_ts]
+    prefix = [0]
+    for _, v in rows_ts:
+        prefix.append(prefix[-1] + v)
+    for label, window, scanner, weekly in LIMIT_SPECS[key]:
+        hits = []
+        for root in roots:
+            try:
+                hits.extend(scanner(root))
+            except Exception:
+                pass
+        picked = [t for t, w in hits
+                  if (weekly is None or w == weekly) and t >= since_ts]
+        picked = sorted(set(round(t / 3600) * 3600 for t in picked))  # 同小时去重
+        if not picked:
+            continue
+        vals = []
+        for t in picked:
+            lo = bisect.bisect_left(times, t - window)
+            hi = bisect.bisect_right(times, t)
+            if hi > lo:
+                vals.append(prefix[hi] - prefix[lo])
+        vals = [v for v in vals if v > 0]
+        if vals:
+            result[label] = {"avg_tokens": round(sum(vals) / len(vals)),
+                             "samples": len(vals)}
+    return result
+
+
 def accumulate(bucket, row):
     bucket["input"] += row.input
     bucket["output"] += row.output
@@ -505,16 +718,19 @@ def collect():
     projects = collections.defaultdict(blank)    # (date, profile, project, model)
     totals = collections.defaultdict(blank)      # profile
     meta = {}
+    # 撞墙窗口估计要滚动聚合：按来源攒 (epoch, 全token) 有序对，ts=0 的跳过
+    rows_ts = {p["key"]: [] for p in PROFILES}
     scanned = cached = 0
 
     for profile in PROFILES:
         key = profile["key"]
-        root = Path(os.path.expanduser(profile["dir"]))
+        # dir 支持逗号分隔的多目录：同名来源合并成一行的场景（grok 个人+团队）
+        roots = [Path(os.path.expanduser(d)) for d in profile["dir"].split(",")]
         parser, pattern = FORMATS[profile["format"]]
         seen = set()
         raw_rows = duplicates = 0
 
-        if root.is_dir():
+        for root in [r for r in roots if r.is_dir()]:
             for path in sorted(root.glob(pattern)):
                 try:
                     rows, raw, was_cached = _rows_of(path, parser)
@@ -536,23 +752,26 @@ def collect():
                     accumulate(models[(row.date, key, row.model)], row)
                     accumulate(projects[(row.date, key, row.project, row.model)], row)
                     accumulate(totals[key], row)
+                    if row.ts and key in LIMIT_SPECS:
+                        rows_ts[key].append((row.ts, row.input + row.output
+                                             + row.cache_write + row.cache_read + row.reasoning))
 
         meta[key] = {
             "label": profile["label"],
             "dir": profile["dir"],
-            "present": root.is_dir(),
+            "present": any(r.is_dir() for r in roots),
             "raw_rows": raw_rows,
             "deduped": duplicates,
         }
         # codex 的额度在会话文件里白送（rate_limits），扫描时顺手取，不联网
-        if key == "codex" and root.is_dir():
+        if key == "codex" and roots[0].is_dir():
             q = codex_quota(root)
             if q:
                 meta[key]["quota"] = q
         # oc 的免费模型限额无接口，用日志撞墙日的已用量均值当估计分母。
         # 口径用全部 token（含缓存读）：Zen 服务端按全 token 计量限额，
         # 与看板主指标 incr（不含缓存读）不同，前端分子也按同一口径加总。
-        if key == "oc" and root.is_dir():
+        if key == "oc" and roots[0].is_dir():
             days = zen_hit_days(root)
             vals = []
             for day in sorted(days):
@@ -566,6 +785,13 @@ def collect():
                     "samples": len(vals),
                     "hit_days": sorted(days),
                 }
+        # 个人套餐的窗口 token 上限估计：撞墙时刻往前滚动窗口的全 token 均值。
+        # grok 是两套目录（个人+团队），撞墙扫描对每个目录都跑再合并
+        if key in LIMIT_SPECS and any(r.is_dir() for r in roots):
+            rows_ts[key].sort()
+            est = est_limit(key, [r for r in roots if r.is_dir()], rows_ts[key])
+            if est:
+                meta[key]["est_limit"] = est
 
     def flatten(source, fields):
         out = []
@@ -598,8 +824,8 @@ def collect():
 CSS_FILE = "style.css"
 # 顺序有意义：全部拼成一个 script 块，app.js 末尾会立即执行 renderAll()，
 # 所以它依赖的 vps.js 顶层常量必须先初始化完（函数声明会提升，const 不会）。
-JS_FILES = ["brand.js", "data.js", "layout.js", "calendar.js", "charts.js",
-            "vps.js", "coding-plans.js", "app.js"]
+JS_FILES = ["brand.js", "prices.js", "data.js", "layout.js", "calendar.js",
+            "charts.js", "vps.js", "coding-plans.js", "app.js"]
 
 
 def build_html():
@@ -1236,11 +1462,46 @@ def serve(port, interval, host="127.0.0.1"):
         threading.Thread(target=vps.loop, daemon=True).start()
 
     def with_quota(payload):
-        # 浅拷贝后挂额度，不污染 Snapshot 里的共享对象
-        extra = {**payload, "quota": quota.get()}
+        # 浅拷贝后挂额度，不污染 Snapshot 里的共享对象（_fill_week_est 会改
+        # est_limit，连这一层也要拷，否则每次请求样本数 +1）
+        extra = {**payload, "quota": quota.get(),
+                 "profiles": [
+                     {**p, "est_limit": dict(p["est_limit"])} if "est_limit" in p else dict(p)
+                     for p in payload.get("profiles", [])
+                 ]}
         if vps:
             extra["vps"] = vps.get()
+        _fill_week_est(extra)
         return extra
+
+    def _fill_week_est(payload):
+        """cco 周窗没有撞墙报错样本（撞 5h 先挡住了）：额度已 ≥90% 的进行中
+        周窗，其窗口用量本身就是接近上限的样本——用重置时间反推窗口起点，
+        日粒度聚合近似（跨日误差可接受，反正是估计）。"""
+        cco_q = (payload.get("quota") or {}).get("cco") or {}
+        week = next((w for w in cco_q.get("windows", []) if w["key"] == "week"), None)
+        if not week or not week.get("reset") or week.get("pct", 0) < 90:
+            return
+        try:
+            reset = datetime.fromisoformat(week["reset"])
+        except ValueError:
+            return
+        start = (reset - timedelta(days=7)).date().isoformat()
+        total = 0
+        for row in payload.get("daily", []):
+            if row["profile"] == "cco" and start <= row["date"] <= reset.date().isoformat():
+                total += row["incr"] + row["cache_read"] + row["reasoning"]
+        if total <= 0:
+            return
+        profile = next((p for p in payload.get("profiles", []) if p["key"] == "cco"), None)
+        if not profile:
+            return
+        old = profile.get("est_limit", {}).get("week") or {}
+        n = old.get("samples", 0)
+        # live 窗口并入既有撞墙样本的均值，而不是顶掉
+        profile.setdefault("est_limit", {})["week"] = {
+            "avg_tokens": round((old.get("avg_tokens", 0) * n + total) / (n + 1)),
+            "samples": n + 1, "live": True}
 
     class Handler(BaseHTTPRequestHandler):
         def _send(self, body, content_type):

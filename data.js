@@ -56,6 +56,19 @@ function shade(hex, lv) {
 /* ---------- 数据整形 ---------- */
 // 刷新会整体换掉 DATA，所以派生结构必须能重算，不能是顶层 const
 let PROFILES = [], byProfile = {}, domModel = {}, firstDate = null, lastDate = null, LAYOUT = [];
+// 每来源每天的成本（USD）：grok 用会话记录的官方计费，其余按 AA 价格表估价
+let DAY_COST = {};
+// grok 的 cost 是实际计费，hover 不带 ≈；其余来源是估价
+const REAL_COST_KEYS = new Set(['grok']);
+
+function dayCostOf(model, input, output, cacheRead, cacheWrite, reasoning) {
+  const p = priceOf(model);
+  if (!p) return 0;
+  const [inP, outP, hitP, writeP] = p;
+  return (input / 1e6) * inP + ((output + reasoning) / 1e6) * outP
+    + (cacheRead / 1e6) * (hitP != null ? hitP : inP)
+    + (cacheWrite / 1e6) * (writeP != null ? writeP : inP);
+}
 
 function applyData(payload) {
   DATA = payload;
@@ -66,6 +79,21 @@ function applyData(payload) {
   for (const row of DATA.daily) {
     if (byProfile[row.profile]) byProfile[row.profile][row.date] = row;
   }
+  // 成本：grok 优先官方计费（cost_ticks，1 USD=1e10 ticks）；
+  // 其余来源（含 opencode，用户指定统一口径）按价格表逐模型估价
+  DAY_COST = {};
+  for (const r of DATA.models) {
+    const dm = DAY_COST[r.profile] || (DAY_COST[r.profile] = {});
+    dm[r.date] = (dm[r.date] || 0) + dayCostOf(r.model, r.input, r.output, r.cache_read, r.cache_write, r.reasoning);
+  }
+  const tickDays = {};
+  for (const r of DATA.daily) {
+    if (REAL_COST_KEYS.has(r.profile) && r.cost_ticks) {
+      const dm = tickDays[r.profile] || (tickDays[r.profile] = {});
+      dm[r.date] = (dm[r.date] || 0) + r.cost_ticks / 1e10;
+    }
+  }
+  for (const key in tickDays) Object.assign(DAY_COST[key], tickDays[key]);
   // 每天用量最大（incr 最高）的模型：格子按当日主力模型的品牌色着色——
   // ccs 行一眼看出哪天在跑哪家（用户明确要求）；单品牌行命中同一品牌，视觉不变
   domModel = {};
@@ -93,7 +121,8 @@ function windowTotals(view = state.view, weeks = state.weeks) {
   const win = activeWindow(view, weeks);
   const acc = {};
   for (const p of PROFILES) {
-    acc[p.key] = { incr: 0, cache_read: 0, input: 0, msgs: 0, reasoning: 0, cost_ticks: 0 };
+    acc[p.key] = { incr: 0, cache_read: 0, input: 0, msgs: 0, reasoning: 0, cost_ticks: 0,
+                   output: 0, cost: 0 };
   }
   for (const r of DATA.daily) {
     const a = acc[r.profile];
@@ -101,29 +130,29 @@ function windowTotals(view = state.view, weeks = state.weeks) {
     a.incr += r.incr;
     a.cache_read += r.cache_read;
     a.input += r.input || 0;
+    a.output += r.output || 0;
     a.msgs += r.msgs;
     a.reasoning += r.reasoning || 0;
     a.cost_ticks += r.cost_ticks || 0;
+    a.cost += (DAY_COST[r.profile] || {})[r.date] || 0;
   }
   return { win, acc };
 }
 
-/* 窗口副信息：cache 读量 · 调用次数×，再挂推理/名义金额（grok）。
-   行标题大数字旁与 tooltip 共用这一套，保证同一窗口下各处数字一致 */
-function winSub(d) {
+/* 窗口副信息：输入（非缓存） · 输出（含 reasoning） · 成本 · 缓存读 · 命中率。
+   行标题大数字旁与 tooltip 共用这一套，保证同一窗口下各处数字一致。
+   grok 的成本来自会话记录的官方计费（无 ≈），其余来源是 AA 价格表估价（带 ≈）。 */
+function winSub(d, key) {
   const extra = [];
-  if (d.reasoning) extra.push(`reason ${human(d.reasoning)}`);
-  // xAI 官方口径：1 USD = 1e10 ticks。API key 调用是实际计费；OAuth 订阅会话是名义价值
-  if (d.cost_ticks) {
-    const usd = d.cost_ticks / 1e10;
-    // 单日窗口下金额常常不足 $1，取整会全变成 $0
-    extra.push(`≈$${usd.toFixed(usd >= 10 ? 0 : 2)}`);
-  }
+  const out = (d.output || 0) + (d.reasoning || 0);
+  extra.push(`out ${human(out)}`);
+  const real = REAL_COST_KEYS.has(key);
+  if (d.cost) extra.push(`${real ? '' : '≈'}$${d.cost.toFixed(d.cost >= 100 ? 0 : 2)}`);
   // 缓存命中率 = cache_read / (cache_read + 非缓存输入)，即输入侧 token 有多大比例直接命中缓存。
   // 输入侧完全没有流量（cache_read 和 input 都为 0）时分母为 0，不显示，避免误导成 0%。
   const read = d.cache_read || 0, fresh = d.input || 0;
-  if (read + fresh > 0) extra.unshift(`hit ${(read / (read + fresh) * 100).toFixed(0)}%`);
-  return `cache ${human(d.cache_read)} · ${fmt(d.msgs)}×${extra.length ? ' · ' + extra.join(' · ') : ''}`;
+  if (read + fresh > 0) extra.push(`hit ${(read / (read + fresh) * 100).toFixed(0)}%`);
+  return `in ${human(d.input || 0)} · ${extra.join(' · ')} · cache ${human(d.cache_read)} · ${fmt(d.msgs)}×`;
 }
 
 function renderMeta() {
@@ -134,18 +163,22 @@ function renderMeta() {
   // 次要项缩到一半大小；日期范围移到 hover，默认不占视觉位。
   const lifeIncr = PROFILES.reduce((s, p) => s + p.incr, 0);
   const lifeRead = PROFILES.reduce((s, p) => s + p.cache_read, 0);
+  const lifeCost = Object.values(DAY_COST).reduce((s, days) => s + Object.values(days).reduce((a, b) => a + b, 0), 0);
   const total = document.getElementById('total');
   total.innerHTML =
     `<span class="big">${human(lifeIncr)}<span class="lab">lifetime</span></span>`
-    + `<span class="sub"><b>${human(lifeRead)}</b> cache read</span>`;
+    + `<span class="sub"><b>${lifeCost >= 1000 ? (lifeCost / 1000).toFixed(1) + 'K' : lifeCost.toFixed(0)}</b> est $</span>`;
   total.dataset.span = `${firstDate} → ${lastDate}`;
-  total.dataset.li = fmt(lifeIncr);
-  total.dataset.lr = fmt(lifeRead);
+  total.dataset.li = lifeIncr;
+  total.dataset.lr = lifeRead;
+  total.dataset.lc = lifeCost.toFixed(2);
 
   const totalIncr = PROFILES.reduce((s, p) => s + acc[p.key].incr, 0);
   const totalDup = PROFILES.reduce((s, p) => s + p.deduped, 0);
   const totalRead = PROFILES.reduce((s, p) => s + acc[p.key].cache_read, 0);
   const totalInput = PROFILES.reduce((s, p) => s + acc[p.key].input, 0);
+  const totalOutput = PROFILES.reduce((s, p) => s + (acc[p.key].output || 0) + (acc[p.key].reasoning || 0), 0);
+  const totalCost = PROFILES.reduce((s, p) => s + (acc[p.key].cost || 0), 0);
   const totalMsgs = PROFILES.reduce((s, p) => s + acc[p.key].msgs, 0);
   // 缓存命中率 = cache_read / (cache_read + 非缓存输入)；无输入流量时留空
   const denom = totalRead + totalInput;
@@ -157,11 +190,14 @@ function renderMeta() {
   metrics.innerHTML =
     `<span class="big">${human(totalIncr)}<span class="lab">total</span></span>`
     + `<span class="sub"><b>${calls}</b> calls</span>`;
-  // hover 数据：缓存读、命中率、统计窗口、精确值——供 mouseover 的 .metrics 分支用
+  // hover 数据：与格子/行标题同口径的输入输出成本，供 mouseover 的 .metrics 分支用
+  // ti/to 等存原始数字（tooltip 里再 human/fmt），带逗号的串 +x 会变 NaN
   metrics.dataset.read = totalRead;
   metrics.dataset.hit = hit;
   metrics.dataset.win = win.label;
-  metrics.dataset.ti = fmt(totalIncr);
+  metrics.dataset.ti = totalInput;
+  metrics.dataset.to = totalOutput;
+  metrics.dataset.tc = totalCost.toFixed(2);
   metrics.dataset.tr = fmt(totalRead);
   metrics.dataset.tm = fmt(totalMsgs);
 }

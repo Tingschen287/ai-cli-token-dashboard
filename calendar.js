@@ -24,13 +24,23 @@ function quotaGroup(key, w, showReset, stale, color, provName) {
   const resetIso = w.reset || (w.reset_ms ? new Date(w.reset_ms).toISOString() : '');
   const reset = fmtReset(resetIso, weekly ? 'datetime' : 'time');
   const tip = (provName ? provName + ' · ' : '')
-    + (reset ? `↻ resets ${reset}` : 'no reset time') + (stale ? ' · query failed, showing last data' : '');
+    + (reset ? `↻ resets ${reset}` : 'no reset time') + (stale ? ' · query failed, showing last data' : '')
+    + estLimitTip(key, w.key === '5h' ? '5h' : 'week');
   return `<span class="qgrp${weekly ? ' qgrp-w' : ''}" data-tip="${tip}">
     <span class="qw">${weekly ? 'wk' : '5h'}</span>
     <span class="qbar"><i style="width:${pct}%;background:${color || COLORS[key]}"></i></span>
     <span class="qn" style="color:${pctColor(pct)}">${pct}%</span>
     ${showReset && reset ? `<span class="qr">↻${reset}</span>` : ''}
   </span>`;
+}
+
+/* 撞墙窗口均值：悬停额度条时随窗口显示的估计上限文案（不占额度区视觉位） */
+function estLimitTip(key, wkey) {
+  const p = (DATA.profiles || []).find(x => x.key === key);
+  const e = p && p.est_limit && p.est_limit[wkey];
+  if (!e) return '';
+  const live = e.live ? '，含当前进行中的高水位窗口' : '';
+  return ` · 窗口上限 ~${human(e.avg_tokens)}（${e.samples} 个窗口样本均值${live}）`;
 }
 
 /* 行尾额度一行排开：cco/grok 窗口少，重置时间内联；ccs 的供应商名收进气泡 */
@@ -164,16 +174,22 @@ function renderCalendar(boxId, view, weeks) {
     start.setDate(start.getDate() - (cols - 1) * 7);
     start.setDate(start.getDate() - start.getDay());
 
-    // 每周模式：把日聚合成周，整列共用同一个值
+    // 每周模式：把日聚合成周，整列共用同一个值（tooltip 的输入/输出/成本同口径聚合）
     let bucket = map, keyOf = k => k;
+    const costMap = DAY_COST[key] || {};
     if (weekly) {
       bucket = {};
       for (const [date, row] of Object.entries(map)) {
         const wk = weekKey(date);
-        const b = bucket[wk] || (bucket[wk] = { incr: 0, cache_read: 0, msgs: 0 });
+        const b = bucket[wk] || (bucket[wk] = { incr: 0, cache_read: 0, msgs: 0,
+                                               input: 0, output: 0, reasoning: 0, cost: 0 });
         b.incr += row.incr;
         b.cache_read += row.cache_read;
         b.msgs += row.msgs;
+        b.input += row.input || 0;
+        b.output += row.output || 0;
+        b.reasoning += row.reasoning || 0;
+        b.cost += costMap[date] || 0;
       }
       keyOf = weekKey;
     }
@@ -237,9 +253,13 @@ function renderCalendar(boxId, view, weeks) {
       const label = weekly ? `week of ${keyOf(dk)}` : dk;
       const cum = cumulative ? ` data-cum="${run}"` : '';
       const who = domName[keyOf(dk)] ? ` data-w="${domName[keyOf(dk)]}"` : '';
+      // nc 是该桶成本字符串：grok 官方计费直接 $，其余按价格表估价带 ≈
+      const dayCost = weekly ? (row ? row.cost : 0) : (costMap[keyOf(dk)] || 0);
+      const nc = dayCost ? `${REAL_COST_KEYS.has(key) ? '' : '≈'}$${dayCost.toFixed(dayCost >= 100 ? 0 : 2)}` : '';
       const attrs = row
         ? ` data-v="1" data-col="${colIndex}" data-d="${label}" data-i="${row.incr}"`
-          + ` data-c="${row.cache_read}" data-m="${row.msgs}" data-p="${p.label}"${who}${cum}`
+          + ` data-ni="${row.input || 0}" data-no="${(row.output || 0) + (row.reasoning || 0)}"`
+          + ` data-nc="${nc}" data-c="${row.cache_read}" data-m="${row.msgs}" data-p="${p.label}"${who}${cum}`
         : ` data-col="${colIndex}" data-d="${label}" data-p="${p.label}"${cum}`;
       cells.push(`<i style="${bg ? 'background:' + bg : ''}"${attrs}></i>`);
     }
@@ -263,7 +283,7 @@ function renderCalendar(boxId, view, weeks) {
     // 槽位标题：左端 logo + 名称 + 窗口大数字/副信息（口径与排行、合计一致）；
     // 右端 ccs 可用模型 logo + 范围总量小字。额度在格子下方的 cal-foot。
     const d = acc[key];
-    const sub = winSub(d);
+    const sub = winSub(d, key);
     // ccs 可用模型是用户状态（CCS_MODELS，localStorage 持久化），标题右侧按它渲染；
     // 末尾 + 按钮常显（不需进 Layout 编辑态），点开选择器切换
     const names = CCS_MODELS.map(brandDisplayName);

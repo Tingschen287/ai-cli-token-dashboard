@@ -28,6 +28,7 @@
 | `template.html` | 前端骨架模板（约 110 行）：HTML + 三个占位符 `/*__STYLE__*/`、`/*__APP__*/`、`/*__DATA__*/null` |
 | `style.css` | 全部样式（含末尾的编辑态样式一节） |
 | `brand.js` | BRAND 品牌表 + 配色派生（brandOf/modelColor/LOGOS），纯数据为主 |
+| `prices.js` | PRICES 模型价格表（$/1M：输入/输出/缓存读/缓存写，源自 AA 全量 RSC 快照）+ `priceOf()` 模型名归一匹配；新模型重新抓一次全量替换即可 |
 | `data.js` | 工具函数 + `applyData` 数据整形 + 时间窗口（activeWindow/windowTotals/winSub/renderMeta） |
 | `layout.js` | 布局状态（localStorage 读写/自愈/新来源落位）+ 编辑态全部交互（候补池/增删挪/调占比） |
 | `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
@@ -41,7 +42,7 @@
 | `README.md` | 面向用户的完整文档（口径、布局、隐私、部署），改行为时同步更新 |
 
 JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**（`collect.py` 顶部
-`JS_FILES` 常量）：brand → data → layout → calendar → charts → vps → coding-plans → app。跨文件
+`JS_FILES` 常量）：brand → prices → data → layout → calendar → charts → vps → coding-plans → app。跨文件
 调用的都是全局函数；新增文件要同步加进 `JS_FILES`。
 
 **`app.js` 必须排最后**：全部 JS 拼进同一个 `<script>` 块，`app.js` 末尾会立即
@@ -71,6 +72,19 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   `meta["oc"]["zen_limit"]` 同理：Zen 免费模型无限额接口，扫 `opencode.log`
   里的限额报错日，取那些日 muse-spark 全 token 用量（含缓存读）的均值当
   估计分母，日志按 (mtime, size) 缓存。
+  个人套餐的 `meta[key]["est_limit"]`（cco 5h+周、codex、grok）是撞墙窗口
+  均值：`Row.ts`（epoch 秒）支撑滚动聚合，撞墙信号按来源各扫各——cco 是
+  jsonl 里 `isApiErrorMessage` 的 "hit your … limit" 报错行（按 resets 时刻
+  去重）、codex 是 rate_limits 窗口 used_percent ≥99（按 resets_at 去重，
+  primary=5h / secondary=周）加上 `rate_limit_reached_type` 非空（归入周窗）、
+  grok 是
+  updates.jsonl 的 `retry_state` failed 且文案为限额类；样本 = 撞墙时刻往前
+  5h/7d 的全 token（增量+缓存读+reasoning，各家窗口计量都含缓存读）合计，
+  多次撞墙取均值。`_tail_hits` 对 append-only 文件做字节级增量扫描。
+  `LIMIT_SINCE` 记套餐切换日，旧套餐的撞墙不进样本（换套餐时改它）。
+  cco 周窗撞墙前先撞 5h、没有周报错样本：serve 侧对额度 ≥90% 的进行中周窗
+  补一个 live 样本（重置时间反推窗口起点，日粒度近似）。前端不占额度区
+  视觉位，悬停额度条时在气泡里显示「窗口上限 ~X（N 个窗口样本均值）」。
 - 额度轮询（仅 `--serve` 模式联网）：`QuotaPoller` 后台线程每 180 秒轮询
   cco（Anthropic OAuth `/api/oauth/usage`）、ccs（cc-switch 库里私网地址的
   供应商按 new-api 处理，读 `~/.cc-switch/cc-switch.db` 拿 token；配了
@@ -222,11 +236,13 @@ feat/fix/style/refactor）。
    老 pro 是 primary=周窗；现在 team 是 primary=5h（300 分钟）、secondary=周窗
    （10080 分钟）。`>1440` 分钟才标 `week`，否则一律 `5h`。按字段名硬编码会把
    周额度显示成 5 小时，重置时间也会走短窗的「只显示时刻」。
-9. 费用：`cost_ticks` 统一 **1 USD = 1e10 ticks**（xAI 官方口径，2026-09 起；
-   曾误按 1e-9 USD/tick 折算导致虚高 10 倍）。grok 记 `costUsdTicks`：API key
-   调用是实际计费，OAuth/订阅会话是名义价值；opencode 的 `cost` 字段是它按
-   provider 报价算的 USD 实估值，折成 cost_ticks 复用。其余来源没有费用字段。
-   这是消耗看板，不是账单看板。
+9. 费用（hover 与两聚合卡统一口径，2026-09-17 起）：grok 用会话记录的
+   `costUsdTicks`（**1 USD = 1e10 ticks**，xAI 官方口径——曾误按 1e-9 USD/tick
+   折算虚高 10 倍；API key 调用是实际计费，OAuth 订阅会话是名义价值），
+   hover 不带 ≈；**其余来源（含 opencode）统一按 `prices.js` 的 AA 价格表
+   估价**：输入 + 输出（含 reasoning）+ 缓存读 + 缓存写（无写价按输入价），
+   hover 带 ≈。`DAY_COST`（data.js）在 applyData 按 (来源, 日) 聚合，grok
+   的官方计费覆盖估价。这是消耗看板，不是账单看板。
 
 ## VPS 流量：两个口径不能混
 

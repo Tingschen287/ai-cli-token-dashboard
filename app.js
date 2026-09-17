@@ -13,22 +13,25 @@ function placeTip(anchor) {
 }
 
 document.addEventListener('mouseover', e => {
-  // 顶部合计卡：显示统计窗口、缓存读、命中率（总 token 和次数已在卡片显示，不重复）
+  // 顶部合计卡：与格子/行标题同口径——输入、输出（含 reasoning）、成本、缓存、命中率
   const mc = e.target.closest('#metrics');
   if (mc) {
     tip.innerHTML = `<b>${mc.dataset.win}</b>`
+      + `<br>in <b>${human(+mc.dataset.ti)}</b> · out <b>${human(+mc.dataset.to)}</b>`
+      + `<br>≈$<b>${mc.dataset.tc}</b>`
       + `<br>cache read <b>${human(+mc.dataset.read)}</b>`
       + `<br>hit rate <b>${mc.dataset.hit}</b>`;
     placeTip(mc);
     return;
   }
-  // 顶栏全期总账：日期范围和精确值都收在 hover 里，卡面上只留两个数
+  // 顶栏全期总账：日期范围和明细都收在 hover 里，卡面上只留两个数
   const tc = e.target.closest('#total');
   if (tc && tc.dataset.span) {
     tip.classList.remove('plain');
     tip.innerHTML = `<b>${tc.dataset.span}</b>`
-      + `<br>incr <b>${tc.dataset.li}</b>`
-      + `<br>cache read <b>${tc.dataset.lr}</b>`;
+      + `<br>incr <b>${human(+tc.dataset.li)}</b>`
+      + `<br>est $<b>${tc.dataset.lc}</b>`
+      + `<br>cache read <b>${human(+tc.dataset.lr)}</b>`;
     placeTip(tc);
     return;
   }
@@ -78,8 +81,8 @@ document.addEventListener('mouseover', e => {
   // dataset.w 是当日/当周增量最高的主力模型（格子颜色即它的品牌色）
   const dom = cell.dataset.w ? `<br><span class="sm">mostly ${cell.dataset.w}</span>` : '';
   tip.innerHTML = cell.dataset.v
-    ? `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br>incr <b>${human(+cell.dataset.i)}</b>${cum}`
-      + `<br><span class="sm">cache read ${human(+cell.dataset.c)} · ${fmt(+cell.dataset.m)} ${unit}</span>${dom}`
+    ? `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br>in <b>${human(+cell.dataset.ni)}</b> · out <b>${human(+cell.dataset.no)}</b>${cum}`
+      + `<br><span class="sm">${cell.dataset.nc || '—'} · cache read ${human(+cell.dataset.c)} · ${fmt(+cell.dataset.m)} ${unit}</span>${dom}`
     : `<b>${cell.dataset.d}</b> · ${cell.dataset.p}<br><span class="sm">no activity${cum}</span>`;
 
   // 每周模式下整列同属一周，一起高亮才看得出 hover 的是哪一周
@@ -174,7 +177,8 @@ info.innerHTML = `
   <div><b>Cross-tool alignment</b>: Grok's <code>inputTokens</code> includes cache reads, Claude's <code>input_tokens</code> doesn't; this is subtracted at collection time.</div>
   <div><b>Dedup</b>: Claude by <code>message.id</code> (streaming writes repeat), Grok by <code>session+prompt_id+model</code> (naturally unique).</div>
   <div><b>Timezone</b>: Claude's UTC strings and Grok's unix seconds are both converted to local time.</div>
-  <div><b>Cost</b>: only Grok records <code>costUsdTicks</code> (official scale 1 USD = 1e10 ticks): actual billing for API-key calls, nominal value for OAuth/subscription sessions.</div>
+  <div><b>Cost</b>: Grok uses the session-recorded <code>costUsdTicks</code> (official scale 1 USD = 1e10 ticks) — actual billing for API-key calls, nominal value for OAuth/subscription sessions. All other sources (OpenCode included) are estimated with the Artificial Analysis price table: input + output(incl. reasoning) + cache read/write at per-model rates.</div>
+  <div><b>Window limits</b>: the <code>est</code> pills next to quotas are averages of rolling-window usage (all tokens incl. cache reads) before each recorded rate-limit hit — an estimate of the plan's per-window cap, not an official number.</div>
   <div><b>Quota area</b>: below each grid, single row. The plan's 5-hour and weekly window usage, independent of the time window. cco / ccs / grok / kimi are polled every 3 min (serve mode only; on failure the last successful data is shown). Codex's <code>rate_limits</code> rides along in its session files — read locally, no network.</div>
   <div><b>Cumulative view</b>: cells are still colored by that day's increment (cumulative is monotonic, coloring carries no information); hover a cell for the cumulative value up to that day.</div>
   <div><b>Refresh</b>: auto-syncs every 60s, reads only local session logs, consumes no tokens.</div>`;
