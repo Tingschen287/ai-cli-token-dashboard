@@ -388,8 +388,8 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 /* ---------- 性能卡：CPU/内存/GPU/磁盘四环 ---------- */
 /* 侧栏上块（1/3 高，下块是排行板 2/3）。四环 2×2，独立 2 秒轮询 /api/sys 只重画
    这一块，进度色与额度条同款四档。 */
-.sys-grid { flex: 1; min-height: 0; display: grid; gap: 12px 8px;
-            grid-template-columns: 1fr 1fr; align-content: center;
+.sys-grid { flex: 1; min-height: 0; display: grid; gap: 8px;
+            grid-template-columns: 1fr 1fr; align-content: space-around;
             align-items: center; }
 /* 环列固定 56px：格子铺满所在的 1fr 列、环 x 坐标恒定，上下两行严格对齐
    （格子若按内容收缩居中，副行文字长短会把环推来推去） */
