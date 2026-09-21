@@ -32,7 +32,7 @@
 | `data.js` | 工具函数 + `applyData` 数据整形 + 时间窗口（activeWindow/windowTotals/winSub/renderMeta） |
 | `layout.js` | 布局状态（localStorage 读写/自愈/新来源落位）+ 编辑态全部交互（候补池/增删挪/调占比） |
 | `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
-| `charts.js` | 排行板（`rankTab`：Model | Project 两榜同构合并渲染，独享侧栏 2/3 高度）+ 占比饼图 |
+| `charts.js` | 排行板（`rankTab`：Model | Project 两榜同构合并渲染，独享侧栏 2/3 高度）：条形只画前 7 名 + Other 汇总（共 8 条，长尾进 Other、段构成保留可 hover），下方剩余空间放占比空心环（donut，≥5% 的扇区标 logo 不标名，环心是窗口总量） |
 | `vps.js` | VPS 带宽胶囊 + 点开的每日分账号堆叠柱状图（可选功能，没配就整块不出现）。配色两套：`VPS_TONES` 是按用量百分比走的四档电量色（绿→金→橙→红），`VPS_PALETTE` 是按账号分色的暖色盘，都刻意留在暖色系里 |
 | `sys.js` | 右侧性能卡：CPU/内存/GPU/磁盘四环。独立 2 秒轮询 `/api/sys`，只重画自己，不碰主屏 60 秒重绘；静态打开无服务时 fetch 静默失败、停在骨架 |
 | `app.js` | 入口：tooltip、render/renderAll、分段控件、长区间遮罩、口径说明、自动同步、刷新 |

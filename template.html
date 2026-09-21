@@ -76,20 +76,14 @@
         </div>
         <div class="sys-grid" id="sys-grid"></div>
       </section>
-      <!-- 排行板：Model | Project 顶层 tab 切换（两个榜同构，合并后独享 2/3 高度
-           能多显示一倍的行），List/Share 二级切换与时间窗口说明照旧 -->
+      <!-- 排行板：Model | Project 顶层 tab 切换（两个榜同构，合并后独享 2/3 高度）；
+           前 7 名 + Other 汇总条，下方放占比空心环（charts.js） -->
       <section class="panel rank-panel">
         <div class="panel-head">
           <div class="seg" id="rank-tab">
             <button data-tab="models" aria-pressed="true">Model</button>
             <button data-tab="projects" aria-pressed="false">Project</button>
           </div>
-          <span style="display:inline-flex;align-items:center;gap:8px">
-            <span class="seg rank-toggle" id="rank-toggle">
-              <button data-mode="list" aria-pressed="true">List</button>
-              <button data-mode="pie" aria-pressed="false">Share</button>
-            </span>
-          </span>
         </div>
         <div class="rank" id="rank"></div>
       </section>
