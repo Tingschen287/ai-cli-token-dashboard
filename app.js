@@ -156,15 +156,30 @@ for (const [id, key, cast] of [['lv-view-seg', 'view', String], ['lv-range-seg',
   });
 }
 
-// 排行面板的 列表/占比 切换：只影响本面板，不动时间窗口
-for (const id of ['models', 'projects']) {
-  document.getElementById(id + '-toggle').addEventListener('click', e => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    rankMode[id] = btn.dataset.mode;
-    [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
-    renderRanks();
-  });
+// 排行板的 Model | Project 顶层 tab：切 tab 只换渲染的数据源，List/Share
+// 二级模式每个 tab 各自记住
+document.getElementById('rank-tab').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.dataset.tab === rankTab) return;
+  rankTab = btn.dataset.tab;
+  [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
+  syncRankToggle();
+  renderRanks();
+});
+
+// 排行面板的 列表/占比 切换：只影响当前 tab 的展示，不动时间窗口
+document.getElementById('rank-toggle').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  rankMode[rankTab] = btn.dataset.mode;
+  [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
+  renderRanks();
+});
+
+// List/Share 按钮的高亮跟随当前 tab 记住的模式
+function syncRankToggle() {
+  document.querySelectorAll('#rank-toggle button').forEach(b =>
+    b.setAttribute('aria-pressed', b.dataset.mode === rankMode[rankTab]));
 }
 
 applyData(DATA);

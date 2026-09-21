@@ -1,13 +1,15 @@
 /* ---------- 右：排行 ----------
    时间窗口跟随左侧视图：每日 = 最后一天，每周 = 最后一周，累计 = 整个范围。 */
 
-// 每个排行面板各自的展示模式：list = 横向堆叠条，pie = 占比环形图
+// 排行板顶层 tab（Model | Project 合并渲染，独享 2/3 高度）+ 每个榜各自的
+// 展示模式：list = 横向堆叠条，pie = 占比环形图
+let rankTab = 'models';
 let rankMode = { models: 'list', projects: 'list' };
 
 function renderRank(id, rows, nameKey) {
-  const box = document.getElementById(id);
+  const box = document.getElementById('rank');
   const win = activeWindow();
-  document.getElementById(id + '-scope').textContent = win.label;
+  document.getElementById('rank-scope').textContent = win.label;
 
   // 按名字分组，组内再按段拆开——同一个项目常常横跨多个渠道/模型，
   // 分开列成多行就看不出这个项目总共烧了多少。
@@ -146,6 +148,6 @@ function renderPie(box, id, list) {
 }
 
 function renderRanks() {
-  renderRank('models', DATA.models, 'model');
-  renderRank('projects', DATA.projects, 'project');
+  if (rankTab === 'models') renderRank('models', DATA.models, 'model');
+  else renderRank('projects', DATA.projects, 'project');
 }

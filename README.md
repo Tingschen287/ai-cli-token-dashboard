@@ -200,8 +200,10 @@ claude code + cc-switch 转发下的 prompt 缓存命中率，
 └─────────────────────────────────┴──────────────────┘
 ```
 
-**右侧三块卡片竖排三等分：By Model、Performance、By Project**。Performance 是
-本机性能实时镜像（CPU / 内存 / GPU / 磁盘四环），下面细说。
+**右侧两块：Performance（1/3 高）+ 排行板（2/3 高）**。Performance 是本机
+性能实时镜像（CPU / 内存 / GPU / 磁盘四环），下面细说。排行板顶部
+**Model | Project** tab 切换两张榜（同构合并，2/3 高度能一屏放下全部行），
+右侧照旧有 List / Share 切换和统计窗口说明。
 
 **默认三行分组：cco 独占一行；codex + grok 一行；ccs + kimi 一行。**
 布局不是写死的——点顶栏 **Layout** 进编辑态（iOS 组件式）：

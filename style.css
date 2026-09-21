@@ -58,9 +58,10 @@ body {
   gap: 14px;
 }
 .side { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-/* 侧栏两块面板平分剩余高度：高度必须由布局决定，否则「几行放得下」
-   会依赖内容本身，形成先有鸡还是先有蛋 */
-.side > .panel { flex: 1; }
+/* 侧栏两块：性能卡 1/3、排行板 2/3（高度必须由布局决定，否则「几行放得下」
+   会依赖内容本身，形成先有鸡还是先有蛋；排行行数是主信息密度，独享大头） */
+.side > #sys-panel { flex: 1; }
+.side > .rank-panel { flex: 2; }
 
 .panel {
   background: var(--panel);
@@ -382,10 +383,11 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .pie-wrap path:hover, .pie-wrap circle:hover { filter: brightness(1.12); }
 
 /* ---------- 性能卡：CPU/内存/GPU/磁盘四环 ---------- */
-/* 侧栏第三块（By Model 与 By Project 之间），.side > .panel 的 flex:1 让三块自动
-   三等分。四环 2×2，独立 2 秒轮询 /api/sys 只重画这一块，进度色与额度条同款四档。 */
+/* 侧栏上块（1/3 高，下块是排行板 2/3）。四环 2×2，独立 2 秒轮询 /api/sys 只重画
+   这一块，进度色与额度条同款四档。 */
 .sys-grid { flex: 1; min-height: 0; display: grid; gap: 12px 8px;
-            grid-template-columns: 1fr 1fr; align-items: center; justify-items: center; }
+            grid-template-columns: 1fr 1fr; align-content: center;
+            align-items: center; justify-items: center; }
 .sys-cell { display: flex; align-items: center; gap: 9px; min-width: 0; }
 .sys-ring { position: relative; width: 56px; height: 56px; flex: none; }
 .sys-ring svg { display: block; }
