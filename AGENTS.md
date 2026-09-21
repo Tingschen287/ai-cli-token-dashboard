@@ -101,12 +101,15 @@ sys → coding-plans → app。跨文件
   识别；普通团队 key 调不通，必须 Management Key）。单家失败沿用旧数据。
   codex 不走这里（见上）。
 - 性能快照（`SysPoller`，仅 `--serve`）：每 2 秒采一轮本机性能存内存快照，
-  `/api/sys` 只做转发。CPU 占用是 `/proc/stat` 相邻两轮的差值（轮询间隔本身就是
-  差分窗口，不额外 sleep）；内存读 `/proc/meminfo`（used = total − available）；
-  磁盘 `shutil.disk_usage` 扫 `/`、`/mnt/c`、`/mnt/d`（挂载缺失的跳过）；GPU 走
-  WSL 直通的 `/usr/lib/wsl/lib/nvidia-smi`（利用率/显存/温度，不存在时为 null）。
-  单块失败填 null，前端显示 `--`。WSL 是虚拟机，**CPU 温度与频率拿不到**——
-  `/sys/class/thermal` 只有 cooling_device，别试着补。
+  `/api/sys` 只做转发。**CPU/内存取 Windows 宿主机视角**（与任务管理器一致）：
+  `WindowsSampler` 常驻一个 PowerShell 子进程用 .NET 性能计数器循环吐数
+  （powershell.exe 冷启动 2s+，不能每轮起进程；stdout 用 `readline()` 读，
+  `for line in` 会撞块缓冲），interop 关闭或进程死透时回退 `/proc` 的 WSL
+  视角兜底；GPU 走 WSL 直通的 `/usr/lib/wsl/lib/nvidia-smi`（利用率/显存/
+  温度，本来就是 Windows 整卡数据，不存在时为 null）；磁盘 `shutil.disk_usage`
+  只扫 `/mnt/c`、`/mnt/d`（statfs 就是 NTFS 卷统计；WSL 根分区是 C: 上的
+  vhdx 虚拟盘，不显示）。单块失败填 null，前端显示 `--`。WSL 是虚拟机，
+  **CPU 温度与频率拿不到**——`/sys/class/thermal` 只有 cooling_device，别试着补。
 - kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
   `https://api.kimi.com/coding/v1/usages` 接口（同一账号），认证用
   `~/.kimi-code/credentials/kimi-code.json` 的 OAuth token。access_token 只有

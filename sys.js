@@ -29,7 +29,7 @@ function buildSys() {
     <div class="sys-cell" id="sys-mem">${sysRing()}<span class="sys-lab"><b>内存</b><span class="sys-sub" id="sys-mem-sub"></span></span></div>
     <div class="sys-cell" id="sys-gpu">${sysRing()}<span class="sys-lab"><b>GPU</b><span class="sys-sub" id="sys-gpu-sub"></span></span></div>
     <div class="sys-cell sys-disks" id="sys-disk">
-      <span class="sys-disk-row">${sysRing(null, 'sm')}${sysRing(null, 'sm')}${sysRing(null, 'sm')}</span>
+      <span class="sys-disk-row" id="sys-disk-rings">${sysRing(null, 'sm')}${sysRing(null, 'sm')}</span>
       <span class="sys-lab"><b>磁盘</b><span class="sys-sub" id="sys-disk-sub"></span></span>
     </div>`;
 }
@@ -53,9 +53,9 @@ function updateSys(s) {
     const pct = s.cpu.pct;
     sysSet('sys-cpu', pct, pctColor(pct), pct == null ? '--' : Math.round(pct) + '<i>%</i>');
     const sub = document.getElementById('sys-cpu-sub');
-    if (sub) sub.textContent = s.cpu.cores ? s.cpu.cores + ' cores · WSL' : 'WSL';
+    if (sub) sub.textContent = s.cpu.cores ? s.cpu.cores + ' 逻辑核' : '';
     document.getElementById('sys-cpu').dataset.tip =
-      `CPU ${pct == null ? '--' : pct + '%'}（WSL 虚拟机拿不到频率与温度）`;
+      `CPU ${pct == null ? '--' : pct + '%'}（Windows 宿主机视角；WSL 里拿不到频率与温度）`;
   }
   if (s.mem) {
     const pct = s.mem.pct;
@@ -75,6 +75,10 @@ function updateSys(s) {
       `${s.gpu.name} · 利用率 ${pct == null ? '--' : pct + '%'} · 显存 ${s.gpu.vused}/${s.gpu.vtotal} GB（${s.gpu.vpct}%） · ${s.gpu.temp}°C`;
   }
   if (s.disks && s.disks.length) {
+    const row = document.getElementById('sys-disk-rings');
+    // 小环数量跟盘数走（盘变了重建，多了/少了才动）
+    if (row && row.children.length !== s.disks.length)
+      row.innerHTML = s.disks.map(() => sysRing(null, 'sm')).join('');
     const cells = document.querySelectorAll('#sys-disk .sys-ring');
     const subParts = [];
     s.disks.forEach((d, i) => {
@@ -84,10 +88,10 @@ function updateSys(s) {
       fg.style.stroke = pctColor(d.pct);
       fg.style.strokeDashoffset = (SYS_C_SM * (1 - d.pct / 100)).toFixed(1);
       el.dataset.tip = `${d.name} ${d.pct}% · ${fmtGB(d.used)} / ${fmtGB(d.total)} GB`;
-      if (d.name !== 'WSL') subParts.push(`${d.name} ${Math.round(d.pct)}%`);
+      subParts.push(`${d.name} ${Math.round(d.pct)}%`);
     });
     const sub = document.getElementById('sys-disk-sub');
-    if (sub) sub.textContent = subParts.join(' · ') || s.disks.map(d => d.name + ' ' + Math.round(d.pct) + '%').join(' · ');
+    if (sub) sub.textContent = subParts.join(' · ');
   }
 }
 

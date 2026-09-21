@@ -1421,14 +1421,23 @@ SYS_INTERVAL = 2
 # WSL 直通 Windows 驱动带的 nvidia-smi（GPU 利用率/显存/温度唯一入口）
 NVIDIA_SMI = Path("/usr/lib/wsl/lib/nvidia-smi")
 
-
-def _cpu_sample():
-    """/proc/stat 首行的 CPU 时间片。两次采样差值算占用率。"""
-    with open("/proc/stat", "rb") as f:
-        parts = f.readline().split()[1:]
-    vals = [int(x) for x in parts]
-    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)      # idle + iowait
-    return idle, sum(vals)
+# 宿主机 CPU/内存只能问 Windows 本身：WSL 的 /proc 是 VM 视角（内存只有
+# VM 配额，不是 64GB 物理内存）。powershell.exe 冷启动 2s+，每次轮询起一个
+# 进程不可行——常驻一个 PowerShell 用 .NET 性能计数器循环吐数（每轮 <10ms），
+# 协议：首行 meta「物理内存总量KB 逻辑核数」，之后每行「CPU% 可用MB」。
+PS_WIN_SAMPLE = r"""
+$ErrorActionPreference='SilentlyContinue'
+$c=New-Object System.Diagnostics.PerformanceCounter('Processor','% Processor Time','_Total')
+$m=New-Object System.Diagnostics.PerformanceCounter('Memory','Available MBytes')
+$os=Get-CimInstance Win32_OperatingSystem
+$cores=(Get-CimInstance Win32_Processor|Measure-Object NumberOfLogicalProcessors -Sum).Sum
+$c.NextValue()|Out-Null
+"meta $([long]$os.TotalVisibleMemorySize) $cores"
+while($true){
+  Start-Sleep -Seconds 2
+  "$([math]::Round($c.NextValue(),1)) $([long]$m.NextValue())"
+}
+""".strip()
 
 
 def _mem_info():
@@ -1445,8 +1454,10 @@ def _mem_info():
 
 
 def _disk_usage():
+    # /mnt/c、/mnt/d 的 statfs 就是 Windows 卷（NTFS）的统计；WSL 根分区是
+    # C: 上的一个 vhdx 虚拟盘，对用户没意义，不显示
     out = []
-    for name, path in (("WSL", "/"), ("C:", "/mnt/c"), ("D:", "/mnt/d")):
+    for name, path in (("C:", "/mnt/c"), ("D:", "/mnt/d")):
         try:
             u = shutil.disk_usage(path)
         except OSError:
@@ -1475,33 +1486,94 @@ def _gpu_info():
         return None
 
 
+class WindowsSampler:
+    """常驻 PowerShell 子进程，持续读宿主机 Windows 的 CPU/内存。
+
+    stdout 迭代是阻塞读：进程死了流关闭、循环自然结束，finally 收尸后
+    歇 3 秒重拉（防 crash loop）。interop 被关（找不到 powershell.exe）
+    就直接放弃，SysPoller 用 WSL 数据兜底。
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.latest = {}
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def get(self):
+        with self.lock:
+            return self.latest
+
+    def _spawn(self):
+        exe = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        if not Path(exe).exists():
+            exe = shutil.which("powershell.exe")
+        if not exe:
+            return None
+        try:
+            return subprocess.Popen(
+                [exe, "-NoProfile", "-Command", PS_WIN_SAMPLE],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, errors="replace")
+        except Exception:
+            return None
+
+    def loop(self):
+        while True:
+            proc = self._spawn()
+            if not proc:
+                return
+            try:
+                meta = None
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break          # 进程死了
+                    parts = line.split()
+                    if len(parts) == 3 and parts[0] == "meta":
+                        meta = (int(parts[1]) / 1048576, int(parts[2]))  # KB→GB
+                        continue
+                    if meta is None or len(parts) != 2:
+                        continue
+                    total, cores = meta
+                    used = max(0.0, total - int(parts[1]) / 1024)        # MB→GB
+                    with self.lock:
+                        self.latest = {
+                            "cpu": {"pct": float(parts[0]), "cores": cores},
+                            "mem": {"pct": round(used / total * 100, 1),
+                                    "used": round(used, 1), "total": round(total, 1)},
+                        }
+            except Exception:
+                pass
+            finally:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            time.sleep(3)
+
+
 class SysPoller:
     """本机性能快照（CPU/内存/磁盘/GPU），比别的轮询快两个量级——性能卡要实时感。
 
-    CPU 占用用相邻两轮 /proc/stat 的差值：轮询间隔本身就是 2 秒的差分窗口，
-    不用额外 sleep 采样。单块失败填 None，前端显示 --。
+    CPU/内存取 WindowsSampler 的宿主机数据（Windows 视角，与任务管理器一致），
+    没拿到时回退 /proc 的 WSL 视角兜底；GPU 的 nvidia-smi 与 /mnt/c、/mnt/d 的
+    磁盘统计本来就是 Windows 的。单块失败填 None，前端显示 --。
     """
 
     def __init__(self, interval=SYS_INTERVAL):
         self.interval = interval
         self.lock = threading.Lock()
         self.latest = {}
-        self._prev = None          # 上一轮 (idle, total)，首轮补采一次
+        self.win = WindowsSampler()
 
     def get(self):
         with self.lock:
             return self.latest
 
     def poll_once(self):
-        prev = self._prev
-        now = _cpu_sample()
-        if prev is None:
-            time.sleep(0.3)
-            prev, now = now, _cpu_sample()
-        d_idle, d_total = now[0] - prev[0], now[1] - prev[1]
-        cpu_pct = round((1 - d_idle / d_total) * 100, 1) if d_total > 0 else None
-        self._prev = now
-        snap = {"cpu": {"pct": cpu_pct, "cores": os.cpu_count()}, "mem": _mem_info(),
+        win = self.win.get() or {}
+        cpu = win.get("cpu") or {"pct": None, "cores": os.cpu_count()}
+        snap = {"cpu": cpu, "mem": win.get("mem") or _mem_info(),
                 "disks": _disk_usage(), "gpu": _gpu_info(),
                 "updated": datetime.now().astimezone().isoformat(timespec="seconds")}
         with self.lock:
