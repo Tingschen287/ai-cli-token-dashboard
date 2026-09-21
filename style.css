@@ -387,9 +387,9 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
    这一块，进度色与额度条同款四档。 */
 .sys-grid { flex: 1; min-height: 0; display: grid; gap: 12px 8px;
             grid-template-columns: 1fr 1fr; align-content: center;
-            align-items: center; justify-items: center; }
-/* 环列固定 56px：两列格子的环 x 坐标恒定，上下两行的环严格对齐
-   （cell 若按内容收缩居中，副行文字长短会把环推来推去） */
+            align-items: center; }
+/* 环列固定 56px：格子铺满所在的 1fr 列、环 x 坐标恒定，上下两行严格对齐
+   （格子若按内容收缩居中，副行文字长短会把环推来推去） */
 .sys-cell { display: grid; grid-template-columns: 56px 1fr; gap: 9px;
             align-items: center; min-width: 0; }
 .sys-ring { position: relative; width: 56px; height: 56px; flex: none; }

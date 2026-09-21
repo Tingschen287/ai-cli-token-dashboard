@@ -104,17 +104,21 @@ document.addEventListener('mouseout', e => {
 
 /* ---------- 渲染 ---------- */
 /* 性能卡高度跟随左侧第一行日历：性能卡与排行板之间的缝，压在左边第一、
-   二行槽位视觉缝隙的中点上。左侧三行是 flex 均分、槽位顶对齐，视觉缝由
-   槽位内容高决定，所以量前两个槽位的实际边界。窄屏单栏不参与。 */
+   二行槽位视觉缝隙的中点上。左侧行是 flex 均分、槽位顶对齐，视觉缝由槽位
+   内容高决定——第一行要取**行内所有槽**的最低底缘（布局常是两列，只量
+   第一个槽会短算），第二行的槽顶 = 行顶。窄屏单栏不参与。 */
 function alignSidePanels() {
   const sp = document.getElementById('sys-panel');
   if (matchMedia('(max-width: 940px)').matches) { sp.style.flex = ''; sp.style.height = ''; return; }
-  const slots = document.querySelectorAll('#view .cal-row > .cal-slot');
+  const rows = document.querySelectorAll('#view .cal-row');
   const stage = document.querySelector('.stage');
-  if (slots.length < 2 || !stage) { sp.style.flex = ''; sp.style.height = ''; return; }
+  if (rows.length < 2 || !stage) { sp.style.flex = ''; sp.style.height = ''; return; }
+  let bottom = 0;
+  rows[0].querySelectorAll(':scope > .cal-slot').forEach(s =>
+    bottom = Math.max(bottom, s.getBoundingClientRect().bottom));
+  const nextTop = rows[1].getBoundingClientRect().top;
   const top = stage.getBoundingClientRect().top;
-  const seam = (slots[0].getBoundingClientRect().bottom
-              + slots[1].getBoundingClientRect().top) / 2;
+  const seam = (bottom + nextTop) / 2;
   sp.style.flex = 'none';
   sp.style.height = Math.max(seam - 6 - top, 160) + 'px';   // 6 = 侧栏块间 12px 缝的一半
 }
