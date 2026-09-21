@@ -99,9 +99,11 @@ function renderRank(id, rows, nameKey) {
 }
 
 /* 占比空心环：扇区 = 环带，颜色 = 该名字最大段的品牌色（Other 用 muted 灰），
-   中角放 logo（≥5% 的扇区才有位置），环心是窗口总量。 */
+   环心是窗口总量。软化处理：扇区两侧各留一点角度缝（露出面板底色，比硬描边
+   线柔），fill 上叠同色 round 描边把内外四角抹圆；logo 垫面板底色圆底呈
+   徽章状——AA 标直接贴在深色扇区上会糊（纯黑标对纯黑扇区）。 */
 function donutHtml(id, rows8, total) {
-  const CX = 110, CY = 110, R = 104, r = 66;
+  const CX = 110, CY = 110, R = 104, r = 66, GAP = 0.024;
   const pt = (ang, rad) => [CX + rad * Math.cos(ang), CY + rad * Math.sin(ang)];
   const colorOf = g => g.isOther ? 'color-mix(in srgb, var(--muted) 40%, var(--panel))'
     : soft(modelColor(domPart(id, g).profile, domPart(id, g).model));
@@ -114,21 +116,27 @@ function donutHtml(id, rows8, total) {
   let acc = -Math.PI / 2, slices = '', marks = '';
   for (const g of rows8) {
     const frac = g.total / total;
-    // 满圆扇区的弧起终点重合画不出来，留 0.36° 的缝（stroke 的 panel 底色也会盖住它）
-    const a0 = acc, a1 = acc + Math.min(frac, 0.9999) * 2 * Math.PI;
-    acc = a1;
+    // 满圆扇区的弧起终点重合画不出来，留 0.36° 的缝兜底；两侧各收 GAP 露出底色缝
+    const span = Math.min(frac, 0.9999) * 2 * Math.PI;
+    const pad = Math.min(GAP, span / 4);
+    const a0 = acc + pad, a1 = acc + span - pad;
+    acc += span;
     const large = a1 - a0 > Math.PI ? 1 : 0;
     const [x0, y0] = pt(a0, R), [x1, y1] = pt(a1, R);
     const [x2, y2] = pt(a1, r), [x3, y3] = pt(a0, r);
+    const col = colorOf(g);
+    // 同色 round 描边：视觉上把扇区的四个直角抹圆，形状变柔
     slices += `<path d="M${x0.toFixed(2)},${y0.toFixed(2)} A${R},${R} 0 ${large} 1 ${x1.toFixed(2)},${y1.toFixed(2)}`
       + ` L${x2.toFixed(2)},${y2.toFixed(2)} A${r},${r} 0 ${large} 0 ${x3.toFixed(2)},${y3.toFixed(2)} Z"`
-      + ` fill="${colorOf(g)}" stroke="var(--panel)" stroke-width="1"`
+      + ` fill="${col}" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"`
       + ` data-sn="${g.name}" data-sv="${g.total}" data-sp="${(frac * 100).toFixed(1)}"/>`;
     if (!g.isOther && frac >= 0.05) {
       const uri = logoUri(g);
       if (uri) {
         const [lx, ly] = pt((a0 + a1) / 2, (R + r) / 2);
-        marks += `<image href="${uri}" x="${(lx - 11).toFixed(1)}" y="${(ly - 11).toFixed(1)}" width="22" height="22"/>`;
+        // 徽章：面板底色圆 + 18px 居中 logo（对角线 12.7 < 圆半径 13.5，四角不戳出）
+        marks += `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="13.5" fill="var(--panel)"/>`
+          + `<image href="${uri}" x="${(lx - 9).toFixed(1)}" y="${(ly - 9).toFixed(1)}" width="18" height="18"/>`;
       }
     }
   }
