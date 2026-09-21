@@ -1421,21 +1421,26 @@ SYS_INTERVAL = 2
 # WSL 直通 Windows 驱动带的 nvidia-smi（GPU 利用率/显存/温度唯一入口）
 NVIDIA_SMI = Path("/usr/lib/wsl/lib/nvidia-smi")
 
-# 宿主机 CPU/内存只能问 Windows 本身：WSL 的 /proc 是 VM 视角（内存只有
-# VM 配额，不是 64GB 物理内存）。powershell.exe 冷启动 2s+，每次轮询起一个
+# 宿主机 CPU/内存/磁盘负载只能问 Windows 本身：WSL 的 /proc 是 VM 视角（内存
+# 只有 VM 配额，不是 64GB 物理内存）。powershell.exe 冷启动 2s+，每次轮询起一个
 # 进程不可行——常驻一个 PowerShell 用 .NET 性能计数器循环吐数（每轮 <10ms），
-# 协议：首行 meta「物理内存总量KB 逻辑核数」，之后每行「CPU% 可用MB」。
+# 协议：首行 meta「物理内存总量KB 逻辑核数」，之后每行「CPU% 可用MB 磁盘负载%」。
+# 磁盘负载 = 100 − LogicalDisk % Idle Time(_Total)（= 任务管理器「活动时间」；
+# 这台机器 PhysicalDisk 类别被禁用 typeperf 查不到，LogicalDisk 可用）。
 PS_WIN_SAMPLE = r"""
 $ErrorActionPreference='SilentlyContinue'
 $c=New-Object System.Diagnostics.PerformanceCounter('Processor','% Processor Time','_Total')
 $m=New-Object System.Diagnostics.PerformanceCounter('Memory','Available MBytes')
+$d=New-Object System.Diagnostics.PerformanceCounter('LogicalDisk','% Idle Time','_Total')
 $os=Get-CimInstance Win32_OperatingSystem
 $cores=(Get-CimInstance Win32_Processor|Measure-Object NumberOfLogicalProcessors -Sum).Sum
 $c.NextValue()|Out-Null
+$d.NextValue()|Out-Null
 "meta $([long]$os.TotalVisibleMemorySize) $cores"
 while($true){
   Start-Sleep -Seconds 2
-  "$([math]::Round($c.NextValue(),1)) $([long]$m.NextValue())"
+  $n=[math]::Max(0,[math]::Min(100,100-$d.NextValue()))
+  "$([math]::Round($c.NextValue(),1)) $([long]$m.NextValue()) $([math]::Round($n,1))"
 }
 """.strip()
 
@@ -1451,20 +1456,6 @@ def _mem_info():
     used = max(0.0, total - avail)
     return {"pct": round(used / total * 100, 1) if total else None,
             "used": round(used, 1), "total": round(total, 1)}
-
-
-def _disk_usage():
-    # /mnt/c、/mnt/d 的 statfs 就是 Windows 卷（NTFS）的统计；WSL 根分区是
-    # C: 上的一个 vhdx 虚拟盘，对用户没意义，不显示
-    out = []
-    for name, path in (("C:", "/mnt/c"), ("D:", "/mnt/d")):
-        try:
-            u = shutil.disk_usage(path)
-        except OSError:
-            continue
-        out.append({"name": name, "pct": round(u.used / u.total * 100, 1),
-                    "used": round(u.used / 2**30, 1), "total": round(u.total / 2**30, 1)})
-    return out
 
 
 def _gpu_info():
@@ -1532,7 +1523,7 @@ class WindowsSampler:
                     if len(parts) == 3 and parts[0] == "meta":
                         meta = (int(parts[1]) / 1048576, int(parts[2]))  # KB→GB
                         continue
-                    if meta is None or len(parts) != 2:
+                    if meta is None or len(parts) != 3:
                         continue
                     total, cores = meta
                     used = max(0.0, total - int(parts[1]) / 1024)        # MB→GB
@@ -1541,6 +1532,7 @@ class WindowsSampler:
                             "cpu": {"pct": float(parts[0]), "cores": cores},
                             "mem": {"pct": round(used / total * 100, 1),
                                     "used": round(used, 1), "total": round(total, 1)},
+                            "disk": {"pct": float(parts[2])},
                         }
             except Exception:
                 pass
@@ -1553,11 +1545,11 @@ class WindowsSampler:
 
 
 class SysPoller:
-    """本机性能快照（CPU/内存/磁盘/GPU），比别的轮询快两个量级——性能卡要实时感。
+    """本机性能快照（CPU/内存/磁盘负载/GPU），比别的轮询快两个量级——性能卡要实时感。
 
-    CPU/内存取 WindowsSampler 的宿主机数据（Windows 视角，与任务管理器一致），
-    没拿到时回退 /proc 的 WSL 视角兜底；GPU 的 nvidia-smi 与 /mnt/c、/mnt/d 的
-    磁盘统计本来就是 Windows 的。单块失败填 None，前端显示 --。
+    CPU/内存/磁盘负载取 WindowsSampler 的宿主机数据（Windows 视角，与任务管理器
+    一致），没拿到时 CPU/内存回退 /proc 的 WSL 视角兜底；GPU 的 nvidia-smi 本来
+    就是 Windows 整卡数据。单块失败填 None，前端显示 --。
     """
 
     def __init__(self, interval=SYS_INTERVAL):
@@ -1574,7 +1566,7 @@ class SysPoller:
         win = self.win.get() or {}
         cpu = win.get("cpu") or {"pct": None, "cores": os.cpu_count()}
         snap = {"cpu": cpu, "mem": win.get("mem") or _mem_info(),
-                "disks": _disk_usage(), "gpu": _gpu_info(),
+                "disk": win.get("disk") or {"pct": None}, "gpu": _gpu_info(),
                 "updated": datetime.now().astimezone().isoformat(timespec="seconds")}
         with self.lock:
             self.latest = snap

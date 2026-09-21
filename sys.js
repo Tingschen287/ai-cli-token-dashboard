@@ -5,16 +5,15 @@
    静态打开（无服务）时 fetch 静默失败，面板停留在骨架。 */
 
 const SYS_POLL_MS = 2000;
-// 大环 r=25 / 小环 r=13.5，周长 = 2πr，stroke-dashoffset 按占比留空
+// 大环 r=25，周长 = 2πr，stroke-dashoffset 按占比留空
 const SYS_C = 2 * Math.PI * 25;
-const SYS_C_SM = 2 * Math.PI * 13.5;
 
-function sysRing(pct, cls) {
-  const size = cls ? 34 : 56, r = cls ? 13.5 : 25;
-  return `<span class="sys-ring${cls ? ' ' + cls : ''}"><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+function sysRing() {
+  const size = 56, r = 25;
+  return `<span class="sys-ring"><svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
     <circle class="sys-bg" cx="${size / 2}" cy="${size / 2}" r="${r}"/>
     <circle class="sys-fg" cx="${size / 2}" cy="${size / 2}" r="${r}"
-      stroke-dasharray="${(cls ? SYS_C_SM : SYS_C).toFixed(1)}" stroke-dashoffset="${(cls ? SYS_C_SM : SYS_C).toFixed(1)}"
+      stroke-dasharray="${SYS_C.toFixed(1)}" stroke-dashoffset="${SYS_C.toFixed(1)}"
       transform="rotate(-90 ${size / 2} ${size / 2})"/></svg>
     <span class="sys-num">--</span></span>`;
 }
@@ -28,10 +27,7 @@ function buildSys() {
     <div class="sys-cell" id="sys-cpu">${sysRing()}<span class="sys-lab"><b>CPU</b><span class="sys-sub" id="sys-cpu-sub"></span></span></div>
     <div class="sys-cell" id="sys-mem">${sysRing()}<span class="sys-lab"><b>内存</b><span class="sys-sub" id="sys-mem-sub"></span></span></div>
     <div class="sys-cell" id="sys-gpu">${sysRing()}<span class="sys-lab"><b>GPU</b><span class="sys-sub" id="sys-gpu-sub"></span></span></div>
-    <div class="sys-cell sys-disks" id="sys-disk">
-      <span class="sys-disk-row" id="sys-disk-rings">${sysRing(null, 'sm')}${sysRing(null, 'sm')}</span>
-      <span class="sys-lab"><b>磁盘</b><span class="sys-sub" id="sys-disk-sub"></span></span>
-    </div>`;
+    <div class="sys-cell" id="sys-disk">${sysRing()}<span class="sys-lab"><b>磁盘</b><span class="sys-sub" id="sys-disk-sub"></span></span></div>`;
 }
 
 function sysSet(id, pct, color, num) {
@@ -65,6 +61,14 @@ function updateSys(s) {
     document.getElementById('sys-mem').dataset.tip =
       `内存 ${pct == null ? '--' : pct + '%'} · ${fmtGB(s.mem.used)} / ${fmtGB(s.mem.total)} GB`;
   }
+  if (s.disk) {
+    const pct = s.disk.pct;
+    sysSet('sys-disk', pct, pctColor(pct), pct == null ? '--' : Math.round(pct) + '<i>%</i>');
+    const sub = document.getElementById('sys-disk-sub');
+    if (sub) sub.textContent = '读写活动 · C:+D:';
+    document.getElementById('sys-disk').dataset.tip =
+      `磁盘读写负载 ${pct == null ? '--' : pct + '%'}（C: + D: 活动时间均值，容量不看）`;
+  }
   if (s.gpu) {
     const pct = s.gpu.pct;
     sysSet('sys-gpu', pct, pctColor(pct), pct == null ? '--' : Math.round(pct) + '<i>%</i>');
@@ -73,25 +77,6 @@ function updateSys(s) {
     if (sub) sub.innerHTML = `${fmtGB(s.gpu.vused)}/${fmtGB(s.gpu.vtotal)} GB · <span${hot}>${s.gpu.temp}°C</span>`;
     document.getElementById('sys-gpu').dataset.tip =
       `${s.gpu.name} · 利用率 ${pct == null ? '--' : pct + '%'} · 显存 ${s.gpu.vused}/${s.gpu.vtotal} GB（${s.gpu.vpct}%） · ${s.gpu.temp}°C`;
-  }
-  if (s.disks && s.disks.length) {
-    const row = document.getElementById('sys-disk-rings');
-    // 小环数量跟盘数走（盘变了重建，多了/少了才动）
-    if (row && row.children.length !== s.disks.length)
-      row.innerHTML = s.disks.map(() => sysRing(null, 'sm')).join('');
-    const cells = document.querySelectorAll('#sys-disk .sys-ring');
-    const subParts = [];
-    s.disks.forEach((d, i) => {
-      const el = cells[i];
-      if (!el) return;
-      const fg = el.querySelector('.sys-fg');
-      fg.style.stroke = pctColor(d.pct);
-      fg.style.strokeDashoffset = (SYS_C_SM * (1 - d.pct / 100)).toFixed(1);
-      el.dataset.tip = `${d.name} ${d.pct}% · ${fmtGB(d.used)} / ${fmtGB(d.total)} GB`;
-      subParts.push(`${d.name} ${Math.round(d.pct)}%`);
-    });
-    const sub = document.getElementById('sys-disk-sub');
-    if (sub) sub.textContent = subParts.join(' · ');
   }
 }
 

@@ -400,12 +400,6 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
 .sys-lab b { font-size: 11px; font-weight: 600; }
 .sys-sub { font-size: 9.5px; color: var(--muted); white-space: nowrap;
            font-variant-numeric: tabular-nums; }
-/* 磁盘格：C/D/WSL 三块盘并排小环，环内不放数字，数值看标签列 */
-.sys-disks { flex-direction: column; align-items: flex-start; gap: 6px; }
-.sys-disk-row { display: flex; gap: 8px; }
-.sys-ring.sm { width: 34px; height: 34px; }
-.sys-ring.sm circle { stroke-width: 4.5; }
-.sys-ring.sm .sys-num { display: none; }
 
 /* ---------- 浮层 ---------- */
 /* 气泡与面板同一套词汇：panel 底 + 1px border + 12px 圆角 + 柔阴影，

@@ -106,10 +106,12 @@ sys → coding-plans → app。跨文件
   （powershell.exe 冷启动 2s+，不能每轮起进程；stdout 用 `readline()` 读，
   `for line in` 会撞块缓冲），interop 关闭或进程死透时回退 `/proc` 的 WSL
   视角兜底；GPU 走 WSL 直通的 `/usr/lib/wsl/lib/nvidia-smi`（利用率/显存/
-  温度，本来就是 Windows 整卡数据，不存在时为 null）；磁盘 `shutil.disk_usage`
-  只扫 `/mnt/c`、`/mnt/d`（statfs 就是 NTFS 卷统计；WSL 根分区是 C: 上的
-  vhdx 虚拟盘，不显示）。单块失败填 null，前端显示 `--`。WSL 是虚拟机，
-  **CPU 温度与频率拿不到**——`/sys/class/thermal` 只有 cooling_device，别试着补。
+  温度，本来就是 Windows 整卡数据，不存在时为 null）。**磁盘只看读写负载
+  不看容量**：负载 = 100 − `LogicalDisk % Idle Time(_Total)`（= 任务管理器
+  「活动时间」；这台机器 `PhysicalDisk` 类别被禁用，typeperf 查不到，用
+  LogicalDisk 的空闲时间取反）。单块失败填 null，前端显示 `--`。WSL 是
+  虚拟机，**CPU 温度与频率拿不到**——`/sys/class/thermal` 只有
+  cooling_device，别试着补。
 - kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
   `https://api.kimi.com/coding/v1/usages` 接口（同一账号），认证用
   `~/.kimi-code/credentials/kimi-code.json` 的 OAuth token。access_token 只有
