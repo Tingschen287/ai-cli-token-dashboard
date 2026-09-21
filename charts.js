@@ -95,7 +95,8 @@ function renderRank(id, rows, nameKey) {
       + `</div>${val}</div>`;
   }).join('');
 
-  box.innerHTML = `<div class="rank-bars">${barHtml}</div>` + donutHtml(id, rows8, total);
+  // 环在上、条形在下：环区吃掉富余高度居中，条形贴底保持完整
+  box.innerHTML = donutHtml(id, rows8, total) + `<div class="rank-bars">${barHtml}</div>`;
 }
 
 /* 占比空心环：扇区 = 环带，颜色 = 该名字最大段的品牌色（Other 用 muted 灰），
