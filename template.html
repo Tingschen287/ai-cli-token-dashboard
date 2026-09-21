@@ -81,6 +81,14 @@
         </div>
         <div class="rank" id="models"></div>
       </section>
+      <!-- 性能卡：CPU/内存/GPU/磁盘四环，独立 2 秒轮询 /api/sys（sys.js），不随主屏刷新节奏 -->
+      <section class="panel" id="sys-panel">
+        <div class="panel-head">
+          <h2>Performance</h2>
+          <span class="note" id="sys-note"></span>
+        </div>
+        <div class="sys-grid" id="sys-grid"></div>
+      </section>
       <section class="panel">
         <div class="panel-head">
           <h2>By Project</h2>

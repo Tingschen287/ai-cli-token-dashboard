@@ -21,6 +21,7 @@ import argparse
 import collections
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -828,7 +829,7 @@ CSS_FILE = "style.css"
 # 顺序有意义：全部拼成一个 script 块，app.js 末尾会立即执行 renderAll()，
 # 所以它依赖的 vps.js 顶层常量必须先初始化完（函数声明会提升，const 不会）。
 JS_FILES = ["brand.js", "prices.js", "data.js", "layout.js", "calendar.js",
-            "charts.js", "vps.js", "coding-plans.js", "app.js"]
+            "charts.js", "vps.js", "sys.js", "coding-plans.js", "app.js"]
 
 
 def build_html():
@@ -1416,6 +1417,105 @@ class VpsPoller:
             time.sleep(self.interval)
 
 
+SYS_INTERVAL = 2
+# WSL 直通 Windows 驱动带的 nvidia-smi（GPU 利用率/显存/温度唯一入口）
+NVIDIA_SMI = Path("/usr/lib/wsl/lib/nvidia-smi")
+
+
+def _cpu_sample():
+    """/proc/stat 首行的 CPU 时间片。两次采样差值算占用率。"""
+    with open("/proc/stat", "rb") as f:
+        parts = f.readline().split()[1:]
+    vals = [int(x) for x in parts]
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)      # idle + iowait
+    return idle, sum(vals)
+
+
+def _mem_info():
+    info = {}
+    with open("/proc/meminfo", "rb") as f:
+        for line in f:
+            k, _, v = line.partition(b":")
+            if k in (b"MemTotal", b"MemAvailable"):
+                info[k.decode()] = int(v.split()[0]) / 1048576   # kB → GB
+    total, avail = info.get("MemTotal", 0), info.get("MemAvailable", 0)
+    used = max(0.0, total - avail)
+    return {"pct": round(used / total * 100, 1) if total else None,
+            "used": round(used, 1), "total": round(total, 1)}
+
+
+def _disk_usage():
+    out = []
+    for name, path in (("WSL", "/"), ("C:", "/mnt/c"), ("D:", "/mnt/d")):
+        try:
+            u = shutil.disk_usage(path)
+        except OSError:
+            continue
+        out.append({"name": name, "pct": round(u.used / u.total * 100, 1),
+                    "used": round(u.used / 2**30, 1), "total": round(u.total / 2**30, 1)})
+    return out
+
+
+def _gpu_info():
+    if not NVIDIA_SMI.exists():
+        return None
+    try:
+        done = subprocess.run(
+            [str(NVIDIA_SMI), "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+             "--format=csv,noheader,nounits"], capture_output=True, timeout=5)
+        if done.returncode != 0:
+            return None
+        name, util, mused, mtotal, temp = done.stdout.decode().strip().splitlines()[0].split(", ")
+        mused, mtotal = float(mused) / 1024, float(mtotal) / 1024   # MiB → GB
+        return {"name": name, "pct": float(util),
+                "vused": round(mused, 1), "vtotal": round(mtotal, 1),
+                "vpct": round(mused / mtotal * 100, 1) if mtotal else None,
+                "temp": int(temp)}
+    except Exception:
+        return None
+
+
+class SysPoller:
+    """本机性能快照（CPU/内存/磁盘/GPU），比别的轮询快两个量级——性能卡要实时感。
+
+    CPU 占用用相邻两轮 /proc/stat 的差值：轮询间隔本身就是 2 秒的差分窗口，
+    不用额外 sleep 采样。单块失败填 None，前端显示 --。
+    """
+
+    def __init__(self, interval=SYS_INTERVAL):
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.latest = {}
+        self._prev = None          # 上一轮 (idle, total)，首轮补采一次
+
+    def get(self):
+        with self.lock:
+            return self.latest
+
+    def poll_once(self):
+        prev = self._prev
+        now = _cpu_sample()
+        if prev is None:
+            time.sleep(0.3)
+            prev, now = now, _cpu_sample()
+        d_idle, d_total = now[0] - prev[0], now[1] - prev[1]
+        cpu_pct = round((1 - d_idle / d_total) * 100, 1) if d_total > 0 else None
+        self._prev = now
+        snap = {"cpu": {"pct": cpu_pct, "cores": os.cpu_count()}, "mem": _mem_info(),
+                "disks": _disk_usage(), "gpu": _gpu_info(),
+                "updated": datetime.now().astimezone().isoformat(timespec="seconds")}
+        with self.lock:
+            self.latest = snap
+
+    def loop(self):
+        while True:
+            try:
+                self.poll_once()
+            except Exception as exc:
+                print(f"[warn] 性能采样失败: {exc}", file=sys.stderr)
+            time.sleep(self.interval)
+
+
 class Snapshot:
     """后台线程定时扫描的结果。页面请求直接读这里，不各自触发扫描。"""
 
@@ -1463,6 +1563,8 @@ def serve(port, interval, host="127.0.0.1"):
     vps = VpsPoller(vps_conf) if vps_conf else None
     if vps:
         threading.Thread(target=vps.loop, daemon=True).start()
+    sysmon = SysPoller()
+    threading.Thread(target=sysmon.loop, daemon=True).start()
 
     def with_quota(payload):
         # 浅拷贝后挂额度，不污染 Snapshot 里的共享对象（_fill_week_est 会改
@@ -1526,6 +1628,10 @@ def serve(port, interval, host="127.0.0.1"):
                 if urllib.parse.parse_qs(query).get("refresh") == ["1"]:
                     coding_plans.request_refresh()
                 self._send(json.dumps(coding_plans.get(), ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            elif path == "/api/sys":
+                # 性能快照：SysPoller 线程已在采，这里只是转发，2 秒一变
+                self._send(json.dumps(sysmon.get(), ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             elif path in ("/", "/index.html", "/dashboard.html"):
                 # 每次请求现读现拼，开发时改完静态文件刷新即生效

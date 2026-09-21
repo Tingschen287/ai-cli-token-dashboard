@@ -34,6 +34,7 @@
 | `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
 | `charts.js` | 按模型/按项目排行 + 占比饼图 |
 | `vps.js` | VPS 带宽胶囊 + 点开的每日分账号堆叠柱状图（可选功能，没配就整块不出现）。配色两套：`VPS_TONES` 是按用量百分比走的四档电量色（绿→金→橙→红），`VPS_PALETTE` 是按账号分色的暖色盘，都刻意留在暖色系里 |
+| `sys.js` | 右侧性能卡：CPU/内存/GPU/磁盘四环。独立 2 秒轮询 `/api/sys`，只重画自己，不碰主屏 60 秒重绘；静态打开无服务时 fetch 静默失败、停在骨架 |
 | `app.js` | 入口：tooltip、render/renderAll、分段控件、长区间遮罩、口径说明、自动同步、刷新 |
 | `vps_probe.py` | 在 VPS 上就地聚合流量的脚本。**不部署到远端**，由 `collect.py` 通过 SSH stdin 喂给 `python3 -` 执行 |
 | `vps.local.json.example` | VPS 连接配置模板；实际的 `vps.local.json` 含服务器地址，已在 `.gitignore` 排除 |
@@ -42,7 +43,8 @@
 | `README.md` | 面向用户的完整文档（口径、布局、隐私、部署），改行为时同步更新 |
 
 JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**（`collect.py` 顶部
-`JS_FILES` 常量）：brand → prices → data → layout → calendar → charts → vps → coding-plans → app。跨文件
+`JS_FILES` 常量）：brand → prices → data → layout → calendar → charts → vps →
+sys → coding-plans → app。跨文件
 调用的都是全局函数；新增文件要同步加进 `JS_FILES`。
 
 **`app.js` 必须排最后**：全部 JS 拼进同一个 `<script>` 块，`app.js` 末尾会立即
@@ -98,6 +100,13 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   靠列表 `redactedApiKey` 尾四位与 `~/.grok/xai-api-key.env` 的 key 尾缀匹配
   识别；普通团队 key 调不通，必须 Management Key）。单家失败沿用旧数据。
   codex 不走这里（见上）。
+- 性能快照（`SysPoller`，仅 `--serve`）：每 2 秒采一轮本机性能存内存快照，
+  `/api/sys` 只做转发。CPU 占用是 `/proc/stat` 相邻两轮的差值（轮询间隔本身就是
+  差分窗口，不额外 sleep）；内存读 `/proc/meminfo`（used = total − available）；
+  磁盘 `shutil.disk_usage` 扫 `/`、`/mnt/c`、`/mnt/d`（挂载缺失的跳过）；GPU 走
+  WSL 直通的 `/usr/lib/wsl/lib/nvidia-smi`（利用率/显存/温度，不存在时为 null）。
+  单块失败填 null，前端显示 `--`。WSL 是虚拟机，**CPU 温度与频率拿不到**——
+  `/sys/class/thermal` 只有 cooling_device，别试着补。
 - kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
   `https://api.kimi.com/coding/v1/usages` 接口（同一账号），认证用
   `~/.kimi-code/credentials/kimi-code.json` 的 OAuth token。access_token 只有

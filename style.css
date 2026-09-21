@@ -381,6 +381,32 @@ h1 { font-family: var(--serif); font-size: 26px; font-weight: 400;
              dominant-baseline: central; pointer-events: none; }
 .pie-wrap path:hover, .pie-wrap circle:hover { filter: brightness(1.12); }
 
+/* ---------- 性能卡：CPU/内存/GPU/磁盘四环 ---------- */
+/* 侧栏第三块（By Model 与 By Project 之间），.side > .panel 的 flex:1 让三块自动
+   三等分。四环 2×2，独立 2 秒轮询 /api/sys 只重画这一块，进度色与额度条同款四档。 */
+.sys-grid { flex: 1; min-height: 0; display: grid; gap: 12px 8px;
+            grid-template-columns: 1fr 1fr; align-items: center; justify-items: center; }
+.sys-cell { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.sys-ring { position: relative; width: 56px; height: 56px; flex: none; }
+.sys-ring svg { display: block; }
+.sys-ring circle { fill: none; stroke-width: 6.5; }
+.sys-ring .sys-bg { stroke: var(--empty); }
+.sys-ring .sys-fg { stroke-linecap: round; transition: stroke-dashoffset .6s linear; }
+.sys-num { position: absolute; inset: 0; display: flex; align-items: center;
+           justify-content: center; font-size: 14px; font-weight: 600;
+           font-variant-numeric: tabular-nums; }
+.sys-num i { font-style: normal; font-size: 9px; font-weight: 400; margin-left: 1px; }
+.sys-lab { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.sys-lab b { font-size: 11px; font-weight: 600; }
+.sys-sub { font-size: 9.5px; color: var(--muted); white-space: nowrap;
+           font-variant-numeric: tabular-nums; }
+/* 磁盘格：C/D/WSL 三块盘并排小环，环内不放数字，数值看标签列 */
+.sys-disks { flex-direction: column; align-items: flex-start; gap: 6px; }
+.sys-disk-row { display: flex; gap: 8px; }
+.sys-ring.sm { width: 34px; height: 34px; }
+.sys-ring.sm circle { stroke-width: 4.5; }
+.sys-ring.sm .sys-num { display: none; }
+
 /* ---------- 浮层 ---------- */
 /* 气泡与面板同一套词汇：panel 底 + 1px border + 12px 圆角 + 柔阴影，
    深浅主题自动适配；不再用纯黑反色块（糊进深色底、在米白底太跳） */
