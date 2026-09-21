@@ -103,10 +103,27 @@ document.addEventListener('mouseout', e => {
 });
 
 /* ---------- 渲染 ---------- */
+/* 性能卡高度跟随左侧第一行日历：性能卡与排行板之间的缝，压在左边第一、
+   二行槽位视觉缝隙的中点上。左侧三行是 flex 均分、槽位顶对齐，视觉缝由
+   槽位内容高决定，所以量前两个槽位的实际边界。窄屏单栏不参与。 */
+function alignSidePanels() {
+  const sp = document.getElementById('sys-panel');
+  if (matchMedia('(max-width: 940px)').matches) { sp.style.flex = ''; sp.style.height = ''; return; }
+  const slots = document.querySelectorAll('#view .cal-row > .cal-slot');
+  const stage = document.querySelector('.stage');
+  if (slots.length < 2 || !stage) { sp.style.flex = ''; sp.style.height = ''; return; }
+  const top = stage.getBoundingClientRect().top;
+  const seam = (slots[0].getBoundingClientRect().bottom
+              + slots[1].getBoundingClientRect().top) / 2;
+  sp.style.flex = 'none';
+  sp.style.height = Math.max(seam - 6 - top, 160) + 'px';   // 6 = 侧栏块间 12px 缝的一半
+}
+
 function render() {
   // 三个视图共用同一套格子行：每行一个平台，标题带窗口数字，图例/额度并进标题右端。
   // 累计视图的区别只在 tooltip（hover 显示截至当日的累计值），格子着色不变。
   renderCalendar('view', state.view, state.weeks);
+  alignSidePanels();
   applyEditChrome();   // 编辑态下重挂把手/徽标/投放条（非编辑态是空操作）
 }
 

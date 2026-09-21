@@ -9,7 +9,6 @@ let rankMode = { models: 'list', projects: 'list' };
 function renderRank(id, rows, nameKey) {
   const box = document.getElementById('rank');
   const win = activeWindow();
-  document.getElementById('rank-scope').textContent = win.label;
 
   // 按名字分组，组内再按段拆开——同一个项目常常横跨多个渠道/模型，
   // 分开列成多行就看不出这个项目总共烧了多少。

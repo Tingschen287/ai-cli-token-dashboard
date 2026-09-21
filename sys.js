@@ -26,9 +26,9 @@ function buildSys() {
   if (!grid) return;
   grid.innerHTML = `
     <div class="sys-cell" id="sys-cpu">${sysRing()}<span class="sys-lab"><b>CPU</b><span class="sys-sub" id="sys-cpu-sub"></span></span></div>
-    <div class="sys-cell" id="sys-mem">${sysRing()}<span class="sys-lab"><b>内存</b><span class="sys-sub" id="sys-mem-sub"></span></span></div>
-    <div class="sys-cell" id="sys-gpu">${sysRing()}<span class="sys-lab"><b>GPU</b><span class="sys-sub" id="sys-gpu-sub"></span></span></div>
-    <div class="sys-cell" id="sys-disk">${sysRing()}<span class="sys-lab"><b>磁盘</b><span class="sys-sub" id="sys-disk-sub"></span></span></div>`;
+    <div class="sys-cell" id="sys-mem">${sysRing()}<span class="sys-lab"><b>Memory</b><span class="sys-sub" id="sys-mem-sub"></span></span></div>
+    <div class="sys-cell" id="sys-gpu">${sysRing()}<span class="sys-lab"><b>GPU</b><span class="sys-sub" id="sys-gpu-sub"></span><span class="sys-sub" id="sys-gpu-temp"></span></span></div>
+    <div class="sys-cell" id="sys-disk">${sysRing()}<span class="sys-lab"><b>Disk</b></span></div>`;
 }
 
 function sysSet(id, pct, color, num) {
@@ -50,9 +50,9 @@ function updateSys(s) {
     const pct = s.cpu.pct;
     sysSet('sys-cpu', pct, pctColor(pct), pct == null ? '--' : Math.round(pct) + '<i>%</i>');
     const sub = document.getElementById('sys-cpu-sub');
-    if (sub) sub.textContent = s.cpu.cores ? s.cpu.cores + ' 逻辑核' : '';
+    if (sub) sub.textContent = s.cpu.cores ? s.cpu.cores + ' cores' : '';
     document.getElementById('sys-cpu').dataset.tip =
-      `CPU ${pct == null ? '--' : pct + '%'}（Windows 宿主机视角；WSL 里拿不到频率与温度）`;
+      `CPU ${pct == null ? '--' : pct + '%'} · ${s.cpu.cores || '?'} logical cores (Windows host; no freq/sensor from WSL)`;
   }
   if (s.mem) {
     const pct = s.mem.pct;
@@ -60,24 +60,24 @@ function updateSys(s) {
     const sub = document.getElementById('sys-mem-sub');
     if (sub) sub.textContent = `${fmtGB(s.mem.used)}/${fmtGB(s.mem.total)} GB`;
     document.getElementById('sys-mem').dataset.tip =
-      `内存 ${pct == null ? '--' : pct + '%'} · ${fmtGB(s.mem.used)} / ${fmtGB(s.mem.total)} GB`;
+      `Memory ${pct == null ? '--' : pct + '%'} · ${fmtGB(s.mem.used)} / ${fmtGB(s.mem.total)} GB`;
   }
   if (s.disk) {
     const pct = s.disk.pct;
     sysSet('sys-disk', pct, pctColor(pct), pct == null ? '--' : Math.round(pct) + '<i>%</i>');
-    const sub = document.getElementById('sys-disk-sub');
-    if (sub) sub.textContent = '读写活动 · C:+D:';
     document.getElementById('sys-disk').dataset.tip =
-      `磁盘读写负载 ${pct == null ? '--' : pct + '%'}（C: + D: 活动时间均值，容量不看）`;
+      `Disk activity ${pct == null ? '--' : pct + '%'} (C: + D: active time, Windows host)`;
   }
   if (s.gpu) {
     const pct = s.gpu.pct;
     sysSet('sys-gpu', pct, pctColor(pct), pct == null ? '--' : Math.round(pct) + '<i>%</i>');
     const sub = document.getElementById('sys-gpu-sub');
+    const temp = document.getElementById('sys-gpu-temp');
     const hot = s.gpu.temp >= 80 ? ' style="color:' + pctColor(90) + '"' : '';
-    if (sub) sub.innerHTML = `${fmtGB(s.gpu.vused)}/${fmtGB(s.gpu.vtotal)} GB · <span${hot}>${s.gpu.temp}°C</span>`;
+    if (sub) sub.textContent = `${fmtGB(s.gpu.vused)}/${fmtGB(s.gpu.vtotal)} GB`;
+    if (temp) temp.innerHTML = `<span${hot}>${s.gpu.temp}°C</span>`;
     document.getElementById('sys-gpu').dataset.tip =
-      `${s.gpu.name} · 利用率 ${pct == null ? '--' : pct + '%'} · 显存 ${s.gpu.vused}/${s.gpu.vtotal} GB（${s.gpu.vpct}%） · ${s.gpu.temp}°C`;
+      `${s.gpu.name} · util ${pct == null ? '--' : pct + '%'} · VRAM ${s.gpu.vused}/${s.gpu.vtotal} GB (${s.gpu.vpct}%) · ${s.gpu.temp}°C`;
   }
 }
 
