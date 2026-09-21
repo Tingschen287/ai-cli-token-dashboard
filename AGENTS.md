@@ -32,8 +32,9 @@
 | `data.js` | 工具函数 + `applyData` 数据整形 + 时间窗口（activeWindow/windowTotals/winSub/renderMeta） |
 | `layout.js` | 布局状态（localStorage 读写/自愈/新来源落位）+ 编辑态全部交互（候补池/增删挪/调占比） |
 | `calendar.js` | 额度区渲染 + `renderCalendar` 日历槽位 |
-| `charts.js` | 按模型/按项目排行 + 占比饼图 |
+| `charts.js` | 排行板（`rankTab`：Model | Project 两榜同构合并渲染，独享侧栏 2/3 高度）：条形只画前 7 名 + Other 汇总（共 8 条，长尾进 Other、段构成保留可 hover），下方剩余空间放占比空心环（donut，≥5% 的扇区标徽章 logo 不标名，环心是窗口总量；扇区两侧留角度缝 + 同色 round 描边抹圆角，视觉变柔） |
 | `vps.js` | VPS 带宽胶囊 + 点开的每日分账号堆叠柱状图（可选功能，没配就整块不出现）。配色两套：`VPS_TONES` 是按用量百分比走的四档电量色（绿→金→橙→红），`VPS_PALETTE` 是按账号分色的暖色盘，都刻意留在暖色系里 |
+| `sys.js` | 右侧性能卡：CPU/内存/GPU/磁盘四环。独立 2 秒轮询 `/api/sys`，只重画自己，不碰主屏 60 秒重绘；静态打开无服务时 fetch 静默失败、停在骨架 |
 | `app.js` | 入口：tooltip、render/renderAll、分段控件、长区间遮罩、口径说明、自动同步、刷新 |
 | `vps_probe.py` | 在 VPS 上就地聚合流量的脚本。**不部署到远端**，由 `collect.py` 通过 SSH stdin 喂给 `python3 -` 执行 |
 | `vps.local.json.example` | VPS 连接配置模板；实际的 `vps.local.json` 含服务器地址，已在 `.gitignore` 排除 |
@@ -42,7 +43,8 @@
 | `README.md` | 面向用户的完整文档（口径、布局、隐私、部署），改行为时同步更新 |
 
 JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**（`collect.py` 顶部
-`JS_FILES` 常量）：brand → prices → data → layout → calendar → charts → vps → coding-plans → app。跨文件
+`JS_FILES` 常量）：brand → prices → data → layout → calendar → charts → vps →
+sys → coding-plans → app。跨文件
 调用的都是全局函数；新增文件要同步加进 `JS_FILES`。
 
 **`app.js` 必须排最后**：全部 JS 拼进同一个 `<script>` 块，`app.js` 末尾会立即
@@ -98,6 +100,18 @@ JS 是朴素全局脚本、无 module 系统，**加载顺序即依赖顺序**�
   靠列表 `redactedApiKey` 尾四位与 `~/.grok/xai-api-key.env` 的 key 尾缀匹配
   识别；普通团队 key 调不通，必须 Management Key）。单家失败沿用旧数据。
   codex 不走这里（见上）。
+- 性能快照（`SysPoller`，仅 `--serve`）：每 2 秒采一轮本机性能存内存快照，
+  `/api/sys` 只做转发。**CPU/内存取 Windows 宿主机视角**（与任务管理器一致）：
+  `WindowsSampler` 常驻一个 PowerShell 子进程用 .NET 性能计数器循环吐数
+  （powershell.exe 冷启动 2s+，不能每轮起进程；stdout 用 `readline()` 读，
+  `for line in` 会撞块缓冲），interop 关闭或进程死透时回退 `/proc` 的 WSL
+  视角兜底；GPU 走 WSL 直通的 `/usr/lib/wsl/lib/nvidia-smi`（利用率/显存/
+  温度，本来就是 Windows 整卡数据，不存在时为 null）。**磁盘只看读写负载
+  不看容量**：负载 = 100 − `LogicalDisk % Idle Time(_Total)`（= 任务管理器
+  「活动时间」；这台机器 `PhysicalDisk` 类别被禁用，typeperf 查不到，用
+  LogicalDisk 的空闲时间取反）。单块失败填 null，前端显示 `--`。WSL 是
+  虚拟机，**CPU 温度与频率拿不到**——`/sys/class/thermal` 只有
+  cooling_device，别试着补。
 - kimi 的额度挂 kimi code 行：与 cc-switch 的 Kimi 供应商同一个
   `https://api.kimi.com/coding/v1/usages` 接口（同一账号），认证用
   `~/.kimi-code/credentials/kimi-code.json` 的 OAuth token。access_token 只有

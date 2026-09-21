@@ -103,10 +103,31 @@ document.addEventListener('mouseout', e => {
 });
 
 /* ---------- 渲染 ---------- */
+/* 性能卡高度跟随左侧第一行日历：性能卡与排行板之间的缝，压在左边第一、
+   二行槽位视觉缝隙的中点上。左侧行是 flex 均分、槽位顶对齐，视觉缝由槽位
+   内容高决定——第一行要取**行内所有槽**的最低底缘（布局常是两列，只量
+   第一个槽会短算），第二行的槽顶 = 行顶。窄屏单栏不参与。 */
+function alignSidePanels() {
+  const sp = document.getElementById('sys-panel');
+  if (matchMedia('(max-width: 940px)').matches) { sp.style.flex = ''; sp.style.height = ''; return; }
+  const rows = document.querySelectorAll('#view .cal-row');
+  const stage = document.querySelector('.stage');
+  if (rows.length < 2 || !stage) { sp.style.flex = ''; sp.style.height = ''; return; }
+  let bottom = 0;
+  rows[0].querySelectorAll(':scope > .cal-slot').forEach(s =>
+    bottom = Math.max(bottom, s.getBoundingClientRect().bottom));
+  const nextTop = rows[1].getBoundingClientRect().top;
+  const top = stage.getBoundingClientRect().top;
+  const seam = (bottom + nextTop) / 2;
+  sp.style.flex = 'none';
+  sp.style.height = Math.max(seam - 6 - top, 160) + 'px';   // 6 = 侧栏块间 12px 缝的一半
+}
+
 function render() {
   // 三个视图共用同一套格子行：每行一个平台，标题带窗口数字，图例/额度并进标题右端。
   // 累计视图的区别只在 tooltip（hover 显示截至当日的累计值），格子着色不变。
   renderCalendar('view', state.view, state.weeks);
+  alignSidePanels();
   applyEditChrome();   // 编辑态下重挂把手/徽标/投放条（非编辑态是空操作）
 }
 
@@ -156,16 +177,14 @@ for (const [id, key, cast] of [['lv-view-seg', 'view', String], ['lv-range-seg',
   });
 }
 
-// 排行面板的 列表/占比 切换：只影响本面板，不动时间窗口
-for (const id of ['models', 'projects']) {
-  document.getElementById(id + '-toggle').addEventListener('click', e => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    rankMode[id] = btn.dataset.mode;
-    [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
-    renderRanks();
-  });
-}
+// 排行板的 Model | Project 顶层 tab：切 tab 只换渲染的数据源
+document.getElementById('rank-tab').addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.dataset.tab === rankTab) return;
+  rankTab = btn.dataset.tab;
+  [...btn.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === btn));
+  renderRanks();
+});
 
 applyData(DATA);
 renderAll();

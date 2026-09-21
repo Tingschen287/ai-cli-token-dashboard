@@ -21,6 +21,7 @@ import argparse
 import collections
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -771,6 +772,9 @@ def collect():
         # oc 的免费模型限额无接口，用日志撞墙日的已用量均值当估计分母。
         # 口径用全部 token（含缓存读）：Zen 服务端按全 token 计量限额，
         # 与看板主指标 incr（不含缓存读）不同，前端分子也按同一口径加总。
+        # 每次扫描都重算（日志按 (mtime,size) 增量、用量桶现聚合）；实测
+        # 滚动 24h 口径不成立（前 24h 已用 83M 未撞墙 > 撞墙日均值），zen
+        # 更像请求节流/共享池，自然日均值只作粗略水位参考。
         if key == "oc" and roots[0].is_dir():
             days = zen_hit_days(root)
             vals = []
@@ -825,7 +829,7 @@ CSS_FILE = "style.css"
 # 顺序有意义：全部拼成一个 script 块，app.js 末尾会立即执行 renderAll()，
 # 所以它依赖的 vps.js 顶层常量必须先初始化完（函数声明会提升，const 不会）。
 JS_FILES = ["brand.js", "prices.js", "data.js", "layout.js", "calendar.js",
-            "charts.js", "vps.js", "coding-plans.js", "app.js"]
+            "charts.js", "vps.js", "sys.js", "coding-plans.js", "app.js"]
 
 
 def build_html():
@@ -1413,6 +1417,169 @@ class VpsPoller:
             time.sleep(self.interval)
 
 
+SYS_INTERVAL = 2
+# WSL 直通 Windows 驱动带的 nvidia-smi（GPU 利用率/显存/温度唯一入口）
+NVIDIA_SMI = Path("/usr/lib/wsl/lib/nvidia-smi")
+
+# 宿主机 CPU/内存/磁盘负载只能问 Windows 本身：WSL 的 /proc 是 VM 视角（内存
+# 只有 VM 配额，不是 64GB 物理内存）。powershell.exe 冷启动 2s+，每次轮询起一个
+# 进程不可行——常驻一个 PowerShell 用 .NET 性能计数器循环吐数（每轮 <10ms），
+# 协议：首行 meta「物理内存总量KB 逻辑核数」，之后每行「CPU% 可用MB 磁盘负载%」。
+# 磁盘负载 = 100 − LogicalDisk % Idle Time(_Total)（= 任务管理器「活动时间」；
+# 这台机器 PhysicalDisk 类别被禁用 typeperf 查不到，LogicalDisk 可用）。
+PS_WIN_SAMPLE = r"""
+$ErrorActionPreference='SilentlyContinue'
+$c=New-Object System.Diagnostics.PerformanceCounter('Processor','% Processor Time','_Total')
+$m=New-Object System.Diagnostics.PerformanceCounter('Memory','Available MBytes')
+$d=New-Object System.Diagnostics.PerformanceCounter('LogicalDisk','% Idle Time','_Total')
+$os=Get-CimInstance Win32_OperatingSystem
+$cores=(Get-CimInstance Win32_Processor|Measure-Object NumberOfLogicalProcessors -Sum).Sum
+$c.NextValue()|Out-Null
+$d.NextValue()|Out-Null
+"meta $([long]$os.TotalVisibleMemorySize) $cores"
+while($true){
+  Start-Sleep -Seconds 2
+  $n=[math]::Max(0,[math]::Min(100,100-$d.NextValue()))
+  "$([math]::Round($c.NextValue(),1)) $([long]$m.NextValue()) $([math]::Round($n,1))"
+}
+""".strip()
+
+
+def _mem_info():
+    info = {}
+    with open("/proc/meminfo", "rb") as f:
+        for line in f:
+            k, _, v = line.partition(b":")
+            if k in (b"MemTotal", b"MemAvailable"):
+                info[k.decode()] = int(v.split()[0]) / 1048576   # kB → GB
+    total, avail = info.get("MemTotal", 0), info.get("MemAvailable", 0)
+    used = max(0.0, total - avail)
+    return {"pct": round(used / total * 100, 1) if total else None,
+            "used": round(used, 1), "total": round(total, 1)}
+
+
+def _gpu_info():
+    if not NVIDIA_SMI.exists():
+        return None
+    try:
+        done = subprocess.run(
+            [str(NVIDIA_SMI), "--query-gpu=name,utilization.gpu,memory.used,memory.total,temperature.gpu",
+             "--format=csv,noheader,nounits"], capture_output=True, timeout=5)
+        if done.returncode != 0:
+            return None
+        name, util, mused, mtotal, temp = done.stdout.decode().strip().splitlines()[0].split(", ")
+        mused, mtotal = float(mused) / 1024, float(mtotal) / 1024   # MiB → GB
+        return {"name": name, "pct": float(util),
+                "vused": round(mused, 1), "vtotal": round(mtotal, 1),
+                "vpct": round(mused / mtotal * 100, 1) if mtotal else None,
+                "temp": int(temp)}
+    except Exception:
+        return None
+
+
+class WindowsSampler:
+    """常驻 PowerShell 子进程，持续读宿主机 Windows 的 CPU/内存。
+
+    stdout 迭代是阻塞读：进程死了流关闭、循环自然结束，finally 收尸后
+    歇 3 秒重拉（防 crash loop）。interop 被关（找不到 powershell.exe）
+    就直接放弃，SysPoller 用 WSL 数据兜底。
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.latest = {}
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def get(self):
+        with self.lock:
+            return self.latest
+
+    def _spawn(self):
+        exe = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+        if not Path(exe).exists():
+            exe = shutil.which("powershell.exe")
+        if not exe:
+            return None
+        try:
+            return subprocess.Popen(
+                [exe, "-NoProfile", "-Command", PS_WIN_SAMPLE],
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                text=True, errors="replace")
+        except Exception:
+            return None
+
+    def loop(self):
+        while True:
+            proc = self._spawn()
+            if not proc:
+                return
+            try:
+                meta = None
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break          # 进程死了
+                    parts = line.split()
+                    if len(parts) == 3 and parts[0] == "meta":
+                        meta = (int(parts[1]) / 1048576, int(parts[2]))  # KB→GB
+                        continue
+                    if meta is None or len(parts) != 3:
+                        continue
+                    total, cores = meta
+                    used = max(0.0, total - int(parts[1]) / 1024)        # MB→GB
+                    with self.lock:
+                        self.latest = {
+                            "cpu": {"pct": float(parts[0]), "cores": cores},
+                            "mem": {"pct": round(used / total * 100, 1),
+                                    "used": round(used, 1), "total": round(total, 1)},
+                            "disk": {"pct": float(parts[2])},
+                        }
+            except Exception:
+                pass
+            finally:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            time.sleep(3)
+
+
+class SysPoller:
+    """本机性能快照（CPU/内存/磁盘负载/GPU），比别的轮询快两个量级——性能卡要实时感。
+
+    CPU/内存/磁盘负载取 WindowsSampler 的宿主机数据（Windows 视角，与任务管理器
+    一致），没拿到时 CPU/内存回退 /proc 的 WSL 视角兜底；GPU 的 nvidia-smi 本来
+    就是 Windows 整卡数据。单块失败填 None，前端显示 --。
+    """
+
+    def __init__(self, interval=SYS_INTERVAL):
+        self.interval = interval
+        self.lock = threading.Lock()
+        self.latest = {}
+        self.win = WindowsSampler()
+
+    def get(self):
+        with self.lock:
+            return self.latest
+
+    def poll_once(self):
+        win = self.win.get() or {}
+        cpu = win.get("cpu") or {"pct": None, "cores": os.cpu_count()}
+        snap = {"cpu": cpu, "mem": win.get("mem") or _mem_info(),
+                "disk": win.get("disk") or {"pct": None}, "gpu": _gpu_info(),
+                "updated": datetime.now().astimezone().isoformat(timespec="seconds")}
+        with self.lock:
+            self.latest = snap
+
+    def loop(self):
+        while True:
+            try:
+                self.poll_once()
+            except Exception as exc:
+                print(f"[warn] 性能采样失败: {exc}", file=sys.stderr)
+            time.sleep(self.interval)
+
+
 class Snapshot:
     """后台线程定时扫描的结果。页面请求直接读这里，不各自触发扫描。"""
 
@@ -1460,6 +1627,8 @@ def serve(port, interval, host="127.0.0.1"):
     vps = VpsPoller(vps_conf) if vps_conf else None
     if vps:
         threading.Thread(target=vps.loop, daemon=True).start()
+    sysmon = SysPoller()
+    threading.Thread(target=sysmon.loop, daemon=True).start()
 
     def with_quota(payload):
         # 浅拷贝后挂额度，不污染 Snapshot 里的共享对象（_fill_week_est 会改
@@ -1523,6 +1692,10 @@ def serve(port, interval, host="127.0.0.1"):
                 if urllib.parse.parse_qs(query).get("refresh") == ["1"]:
                     coding_plans.request_refresh()
                 self._send(json.dumps(coding_plans.get(), ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            elif path == "/api/sys":
+                # 性能快照：SysPoller 线程已在采，这里只是转发，2 秒一变
+                self._send(json.dumps(sysmon.get(), ensure_ascii=False).encode("utf-8"),
                            "application/json; charset=utf-8")
             elif path in ("/", "/index.html", "/dashboard.html"):
                 # 每次请求现读现拼，开发时改完静态文件刷新即生效

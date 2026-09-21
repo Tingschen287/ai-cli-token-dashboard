@@ -68,31 +68,24 @@
     </section>
 
     <aside class="side">
-      <section class="panel">
+      <!-- 性能卡：CPU/内存/GPU/磁盘四环，独立 2 秒轮询 /api/sys（sys.js），不随主屏刷新节奏 -->
+      <section class="panel" id="sys-panel">
         <div class="panel-head">
-          <h2>By Model</h2>
-          <span style="display:inline-flex;align-items:center;gap:8px">
-            <span class="note" id="models-scope"></span>
-            <span class="seg rank-toggle" id="models-toggle">
-              <button data-mode="list" aria-pressed="true">List</button>
-              <button data-mode="pie" aria-pressed="false">Share</button>
-            </span>
-          </span>
+          <h2>Performance</h2>
+          <span class="note" id="sys-note"></span>
         </div>
-        <div class="rank" id="models"></div>
+        <div class="sys-grid" id="sys-grid"></div>
       </section>
-      <section class="panel">
+      <!-- 排行板：Model | Project 顶层 tab 切换（两个榜同构，合并后独享 2/3 高度）；
+           前 7 名 + Other 汇总条，下方放占比空心环（charts.js） -->
+      <section class="panel rank-panel">
         <div class="panel-head">
-          <h2>By Project</h2>
-          <span style="display:inline-flex;align-items:center;gap:8px">
-            <span class="note" id="projects-scope"></span>
-            <span class="seg rank-toggle" id="projects-toggle">
-              <button data-mode="list" aria-pressed="true">List</button>
-              <button data-mode="pie" aria-pressed="false">Share</button>
-            </span>
-          </span>
+          <div class="seg" id="rank-tab">
+            <button data-tab="models" aria-pressed="true">Model</button>
+            <button data-tab="projects" aria-pressed="false">Project</button>
+          </div>
         </div>
-        <div class="rank" id="projects"></div>
+        <div class="rank" id="rank"></div>
       </section>
     </aside>
   </div>
