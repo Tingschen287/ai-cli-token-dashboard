@@ -1425,15 +1425,17 @@ NVIDIA_SMI = Path("/usr/lib/wsl/lib/nvidia-smi")
 # 只有 VM 配额，不是 64GB 物理内存）。powershell.exe 冷启动 2s+，每次轮询起一个
 # 进程不可行——常驻一个 PowerShell 用 .NET 性能计数器循环吐数（每轮 <10ms），
 # 协议：首行 meta「物理内存总量KB 逻辑核数」，之后每行「CPU% 可用MB 磁盘负载%」。
-# CPU = Processor Information % Processor Utility(_Total)，任务管理器同款口径
-# （频率归一的"实际做功"，turbo 满转时会超 100 故封顶显示；老式 % Processor
-# Time 是忙时占比，轻载降频时会比任务管理器高出一倍——实测本机 perf=195% 时
-# busy 80% 只对应 utility 40）。
+# CPU = Processor Information % Processor Time(_Total)，即调度器视角的忙时占比，
+# 与本机任务管理器读数一致。曾试过 % Processor Utility（微软文档称任务管理器
+# 同款"频率归一做功"口径），但本机轻载不降频（% Processor Performance 常驻
+# ~200%），utility ≈ busy × 2，实测 busy 30-50% 时 utility 63-100%，面板显示
+# 98-100 而任务管理器 <40——任务管理器在这台机器上表现为 busy 口径，故改回
+# Time 并保留 0-100 封顶做防御。
 # 磁盘负载 = 100 − LogicalDisk % Idle Time(_Total)（= 任务管理器「活动时间」；
 # 这台机器 PhysicalDisk 类别被禁用 typeperf 查不到，LogicalDisk 可用）。
 PS_WIN_SAMPLE = r"""
 $ErrorActionPreference='SilentlyContinue'
-$c=New-Object System.Diagnostics.PerformanceCounter('Processor Information','% Processor Utility','_Total')
+$c=New-Object System.Diagnostics.PerformanceCounter('Processor Information','% Processor Time','_Total')
 $m=New-Object System.Diagnostics.PerformanceCounter('Memory','Available MBytes')
 $d=New-Object System.Diagnostics.PerformanceCounter('LogicalDisk','% Idle Time','_Total')
 $os=Get-CimInstance Win32_OperatingSystem
