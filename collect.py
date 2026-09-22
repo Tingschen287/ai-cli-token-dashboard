@@ -1425,11 +1425,15 @@ NVIDIA_SMI = Path("/usr/lib/wsl/lib/nvidia-smi")
 # 只有 VM 配额，不是 64GB 物理内存）。powershell.exe 冷启动 2s+，每次轮询起一个
 # 进程不可行——常驻一个 PowerShell 用 .NET 性能计数器循环吐数（每轮 <10ms），
 # 协议：首行 meta「物理内存总量KB 逻辑核数」，之后每行「CPU% 可用MB 磁盘负载%」。
+# CPU = Processor Information % Processor Utility(_Total)，任务管理器同款口径
+# （频率归一的"实际做功"，turbo 满转时会超 100 故封顶显示；老式 % Processor
+# Time 是忙时占比，轻载降频时会比任务管理器高出一倍——实测本机 perf=195% 时
+# busy 80% 只对应 utility 40）。
 # 磁盘负载 = 100 − LogicalDisk % Idle Time(_Total)（= 任务管理器「活动时间」；
 # 这台机器 PhysicalDisk 类别被禁用 typeperf 查不到，LogicalDisk 可用）。
 PS_WIN_SAMPLE = r"""
 $ErrorActionPreference='SilentlyContinue'
-$c=New-Object System.Diagnostics.PerformanceCounter('Processor','% Processor Time','_Total')
+$c=New-Object System.Diagnostics.PerformanceCounter('Processor Information','% Processor Utility','_Total')
 $m=New-Object System.Diagnostics.PerformanceCounter('Memory','Available MBytes')
 $d=New-Object System.Diagnostics.PerformanceCounter('LogicalDisk','% Idle Time','_Total')
 $os=Get-CimInstance Win32_OperatingSystem
@@ -1440,7 +1444,8 @@ $d.NextValue()|Out-Null
 while($true){
   Start-Sleep -Seconds 2
   $n=[math]::Max(0,[math]::Min(100,100-$d.NextValue()))
-  "$([math]::Round($c.NextValue(),1)) $([long]$m.NextValue()) $([math]::Round($n,1))"
+  $p=[math]::Max(0,[math]::Min(100,[math]::Round($c.NextValue(),1)))
+  "$p $([long]$m.NextValue()) $([math]::Round($n,1))"
 }
 """.strip()
 
